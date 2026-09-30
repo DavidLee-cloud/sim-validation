@@ -100,7 +100,10 @@ def main() -> None:
                       for ic in ics for dr in DRIFTS for ds in (0, 1) for ms in range(5))
         out["A3"] = {"by_ic": a3, "displacement_p1_lt_p3_all": disp_ok}
         # A4 (part: Jaccard increasing in IC for P3)
-        jac = {dr: [jaccard([idx[(ic, dr, "p3", ds, ms, 1000)] for ms in range(5)]) for ic in ics] for dr in DRIFTS}
+        # 缺陷修正（2026-10-01，提交说明见 D51 补充）：原行漏写数据种子循环（NameError）；按 A4_hl 同一口径，
+        # 每个数据种子内算跨模型种子 Jaccard，再对 2 个数据种子取平均。
+        jac = {dr: [float(np.mean([jaccard([idx[(ic, dr, "p3", ds, ms, 1000)] for ms in range(5)]) for ds in (0, 1)]))
+                    for ic in ics] for dr in DRIFTS}
         mono = {dr: all(b >= a for a, b in zip(v, v[1:])) for dr, v in jac.items()}
         out["A4_ic"] = {"jaccard_p3_by_ic": jac, "monotone": mono, "pass": sum(mono.values()) >= 3}
     else:
