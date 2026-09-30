@@ -53,6 +53,14 @@ def grid_units(name: str) -> list[dict]:
         return list(_prod(kind=["train"], ic=[0.15, 0.20], style_vol_h=[0.04], drift=["regime"], style_share=[0.3],
                           tail_df=[6.0], lowvol_share=[0.2], protocol=["p1", "p3"], model=["e2e", "reg"],
                           data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
+    if name == "calib_top":    # can decision-focused training reproduce the top-of-ranking inversion and k/c?
+        u = list(_prod(kind=["train"], ic=[0.15], style_vol_h=[0.04], drift=["regime"], style_share=[0.3],
+                       tail_df=[3.0], lowvol_share=[0.2, 0.4], protocol=["p3"], model=["e2e_fid"],
+                       risk=[5.0, 20.0], temp=[1.0, 0.3], data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
+        u += list(_prod(kind=["train"], ic=[0.15], style_vol_h=[0.04], drift=["regime"], style_share=[0.3],
+                        tail_df=[3.0], lowvol_share=[0.2, 0.4], protocol=["p3"], model=["reg"],
+                        data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
+        return u
     if name == "A_main":       # A1-A3
         return list(_prod(kind=["train"], ic=[0.02, 0.05, 0.10, 0.20], drift=["none", "rw_slow", "rw_fast", "regime"],
                           style_share=[0.3], tail_df=[6.0], protocol=["p1", "p1c", "p2", "p3", "p4_504", "p5"],
@@ -117,7 +125,8 @@ def run_unit(u: dict) -> dict:
         return {"unit": u, "summary": out, "sec": round(time.perf_counter() - t0, 1)}
     panel = _panel(u)
     model = "e2e" if u["model"].startswith("e2e") else "reg"
-    loss = LossSpec(kind=model, fidelity=1.0 if u["model"] == "e2e_fid" else 0.0)
+    loss = LossSpec(kind=model, fidelity=1.0 if u["model"] == "e2e_fid" else 0.0,
+                    risk=float(u.get("risk", 5.0)), temp=float(u.get("temp", 1.0)))
     spec = RunSpec(protocol=u["protocol"], model=model, loss=loss, model_seed=int(u["model_seed"]),
                    start_day=int(u["start_day"]), val_days=u.get("val_days"))
     res = backtest(panel, spec)
