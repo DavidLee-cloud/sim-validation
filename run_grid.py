@@ -91,7 +91,7 @@ def _panel(u: dict):
             return pickle.load(fh)
     CACHE.mkdir(parents=True, exist_ok=True)
     panel = simulate(cfg)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
     with tmp.open("wb") as fh:
         pickle.dump(panel, fh, protocol=4)
     tmp.replace(path)
