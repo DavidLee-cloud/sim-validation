@@ -102,6 +102,14 @@ def _panel(u: dict):
     return panel
 
 
+def _env() -> dict:
+    import platform
+    import numpy
+    import torch
+    return {"python": platform.python_version(), "torch": torch.__version__, "numpy": numpy.__version__,
+            "platform": platform.platform()}
+
+
 def run_unit(u: dict) -> dict:
     t0 = time.perf_counter()
     if u["kind"] == "score":
@@ -115,7 +123,7 @@ def run_unit(u: dict) -> dict:
     res = backtest(panel, spec)
     h = panel.cfg.horizon
     summ = {"all": summarize(res, h), "overlap": summarize(res, h, from_day=2000)}
-    return {"unit": u, "dgp": panel.cfg.as_dict(), "summary": summ, "fits": res["fits"],
+    return {"unit": u, "env": _env(), "dgp": panel.cfg.as_dict(), "summary": summ, "fits": res["fits"],
             "decisions": res["decisions"], "sec": round(time.perf_counter() - t0, 1)}
 
 
