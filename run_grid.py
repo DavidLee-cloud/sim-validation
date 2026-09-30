@@ -41,9 +41,10 @@ def _prod(**axes):
 # --------------------------------------------------------------------------- grids
 def grid_units(name: str) -> list[dict]:
     if name == "calib":        # fingerprint calibration around the empirical cell (design 2.3)
-        return list(_prod(kind=["train"], ic=[0.03, 0.05, 0.08], drift=["regime"], style_share=[0.3],
-                          tail_df=[6.0], protocol=["p1", "p3"], model=["reg"], data_seed=[0],
-                          model_seed=[0, 1, 2], start_day=[1000]))
+        # ic is the oracle IC (truth vs realised); the empirical fingerprints refer to the model's realised IC
+        return list(_prod(kind=["train"], ic=[0.05, 0.10, 0.15, 0.20], style_vol_h=[0.02, 0.04],
+                          drift=["regime"], style_share=[0.3], tail_df=[6.0], protocol=["p1", "p3"],
+                          model=["reg"], data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
     if name == "calib_e2e":
         return list(_prod(kind=["train"], ic=[0.05], drift=["regime"], style_share=[0.3], tail_df=[6.0],
                           lowvol_share=[0.2], protocol=["p3"], model=["e2e"], data_seed=[0],
@@ -80,9 +81,9 @@ def grid_units(name: str) -> list[dict]:
 
 # --------------------------------------------------------------------------- execution
 def _panel(u: dict):
-    cfg = DGPConfig(ic=u["ic"], drift=u["drift"], style_share=u.get("style_share", 0.0),
-                    tail_df=u.get("tail_df", INF), lowvol_share=u.get("lowvol_share", 0.0),
-                    seed=int(u["data_seed"]))
+    fields = set(DGPConfig.__dataclass_fields__)
+    kw = {k: v for k, v in u.items() if k in fields and k != "seed"}
+    cfg = DGPConfig(**kw, seed=int(u["data_seed"]))
     key = hashlib.sha1(json.dumps(cfg.as_dict(), sort_keys=True).encode()).hexdigest()[:16]
     path = CACHE / f"panel_{key}.pkl"
     if path.exists():

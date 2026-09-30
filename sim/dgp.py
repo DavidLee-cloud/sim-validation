@@ -44,6 +44,7 @@ class DGPConfig:
     idio_vol_h: float = 0.09         # H-day idiosyncratic volatility of a median stock
     market_vol_h: float = 0.06       # H-day market volatility
     style_vol_h: float = 0.02        # H-day volatility of each style factor return per unit exposure
+    market_premium_ann: float = 0.06 # annual drift of the market factor (equity premium)
     seed: int = 0
 
     def as_dict(self) -> dict:
@@ -139,7 +140,7 @@ def simulate(cfg: DGPConfig) -> Panel:
     else:
         z = rng.standard_normal((t, n))
     eps = sd_idio * idio_scale * z
-    m = cfg.market_vol_h / np.sqrt(h) * rng.standard_normal(t)
+    m = cfg.market_premium_ann / 252 + cfg.market_vol_h / np.sqrt(h) * rng.standard_normal(t)
     n_style = len(STYLE_FEATURES)
     f_noise = cfg.style_vol_h / np.sqrt(h) * rng.standard_normal((t, n_style))
 
