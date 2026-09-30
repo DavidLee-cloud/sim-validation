@@ -67,21 +67,22 @@ def grid_units(name: str) -> list[dict]:
                           model=["reg", "e2e_fid"], risk=[5.0, 20.0], temp=[0.3], data_seed=[0],
                           model_seed=[0, 1, 2], start_day=[1000]))
     if name == "A_main":       # A1-A3
-        return list(_prod(kind=["train"], ic=[0.02, 0.05, 0.10, 0.20], drift=["none", "rw_slow", "rw_fast", "regime"],
-                          style_share=[0.3], tail_df=[6.0], protocol=["p1", "p1c", "p2", "p3", "p4_504", "p5"],
+        return list(_prod(kind=["train"], ic=[0.05, 0.10, 0.15, 0.20], style_vol_h=[0.04],
+                          drift=["none", "rw_slow", "rw_fast", "regime"], style_share=[0.3], tail_df=[6.0],
+                          protocol=["p1", "p1c", "p1x", "p2", "p3", "p4_504", "p5"],
                           model=["reg"], data_seed=[0, 1], model_seed=[0, 1, 2, 3, 4], start_day=[1000, 2000]))
     if name == "A_val":        # validation length for P1
-        return list(_prod(kind=["train"], ic=[0.05, 0.10], drift=["rw_slow", "regime"], style_share=[0.3],
-                          tail_df=[6.0], protocol=["p1"], val_days=[60, 120, 250], model=["reg"],
+        return list(_prod(kind=["train"], ic=[0.10, 0.15], style_vol_h=[0.04], drift=["rw_slow", "regime"],
+                          style_share=[0.3], tail_df=[6.0], protocol=["p1"], val_days=[60, 120, 250], model=["reg"],
                           data_seed=[0, 1], model_seed=[0, 1, 2, 3, 4], start_day=[1000]))
     if name == "A_hl":         # A4-A5: effective sample, style regimes, seed divergence
-        return list(_prod(kind=["train"], ic=[0.05], drift=["none", "rw_slow", "rw_fast", "regime"],
+        return list(_prod(kind=["train"], ic=[0.15], style_vol_h=[0.04], drift=["none", "rw_slow", "rw_fast", "regime"],
                           style_share=[0.0, 0.3, 0.6], tail_df=[6.0],
                           protocol=["p4_252", "p4_504", "p4_1008", "p3"], model=["reg"], data_seed=[0, 1],
                           model_seed=[0, 1, 2, 3, 4], start_day=[1000]))
     if name == "A_e2e":        # transfer to decision-focused training
-        return list(_prod(kind=["train"], ic=[0.05, 0.10], drift=["rw_slow", "regime"], style_share=[0.3],
-                          tail_df=[6.0], protocol=["p1", "p3"], model=["e2e"], data_seed=[0, 1],
+        return list(_prod(kind=["train"], ic=[0.15, 0.20], style_vol_h=[0.04], drift=["rw_slow", "regime"],
+                          style_share=[0.3], tail_df=[6.0], protocol=["p1", "p3"], model=["e2e_fid"], data_seed=[0, 1],
                           model_seed=[0, 1, 2, 3, 4], start_day=[1000, 2000]))
     if name == "B_train":      # B4-B5: method or market; fidelity
         return list(_prod(kind=["train"], ic=[0.05, 0.10], drift=["none", "regime"], style_share=[0.3],
