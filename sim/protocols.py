@@ -4,8 +4,10 @@
 Every protocol trains on the same information set: decision day d may use sample days s with
 s + H <= d (label fully realised) and s >= ``burn``.  A retrain happens every ``retrain_every`` decisions.
 
-P1   holdout early stopping: last 20% of dates validate (H-day embargo), patience 5, <=30 epochs,
-     Adam (L2 1e-5), warm start from the previous fit ('p1'); 'p1c' is the cold-start variant.
+P1   holdout early stopping as in the original chapter protocol: rolling 252-day training window, the
+     most recent 120 dates validate (H-day embargo between them), patience 5, <=30 epochs, Adam (L2 1e-5),
+     warm start from the previous fit ('p1'); 'p1c' cold start; 'p1x' expanding window with the last 20%
+     of dates as validation.
 P2   purged blocked K-fold (K=5, H-day purge) picks the epoch count, then refits from scratch on all dates.
 P3   fixed budget: 30 epochs, cosine decay to 1%, AdamW weight decay 0.03, fresh init at every retrain.
 P4   P3 with recency-weighted date sampling, half-life in days ('p4_252', 'p4_504', 'p4_1008').
@@ -40,7 +42,8 @@ class RunSpec:
     dates_per_batch: int = 8
     lr: float = 1e-3
     burn: int = 60
-    val_days: int | None = None      # P1/P5 validation length in dates; None = last 20%
+    val_days: int | None = None      # P1/P1c/P5 validation length in dates; None = 120
+    train_window: int = 252          # P1/P1c/P5 rolling training window in dates
     commission: float = 3e-4
     stamp: float = 5e-4
 
@@ -141,10 +144,15 @@ class Fitter:
                 self._fresh(j)
             m = self.models[j]
             start = flat_params(m)
-            if proto in ("p1", "p1c", "p5"):
-                n_val = spec.val_days or max(20, int(0.2 * len(days)))
+            if proto in ("p1", "p1c", "p1x", "p5"):
+                if proto == "p1x":
+                    n_val = max(20, int(0.2 * len(days)))
+                else:
+                    n_val = spec.val_days or 120
                 val = days[-n_val:]
                 trn = days[: len(days) - n_val - h]
+                if proto != "p1x":
+                    trn = trn[-spec.train_window:]
                 ep, _ = _train_epochs(m, self.data, trn, spec, self.rng, epochs=spec.epochs, optimizer="adam",
                                       val_days=val, patience=5)
             elif proto == "p2":
@@ -247,6 +255,9 @@ def summarize(res: dict, h: int, from_day: int | None = None) -> dict:
     return {
         "n_decisions": len(rows), "ann_net": float(ann), "mdd": mdd,
         "sharpe": float(net.mean() / (net.std() + 1e-12) * np.sqrt(per_year)),
+        "excess_ann": float(np.mean(net - np.array([r["uni_r"] for r in rows])) * per_year),
+        "excess_ir": float(np.mean(net - np.array([r["uni_r"] for r in rows]))
+                           / (np.std(net - np.array([r["uni_r"] for r in rows])) + 1e-12) * np.sqrt(per_year)),
         "true_ic": g("true_ic"), "real_ic": g("real_ic"), "real_ic_sd": float(np.std([r["real_ic"] for r in rows])),
         "oracle_capture": float(capture), "top_excess_mu_ann": (g("top_mu") - g("uni_mu")) * per_year,
         "slope_real": g("slope_real"), "slope_true": g("slope_true"),

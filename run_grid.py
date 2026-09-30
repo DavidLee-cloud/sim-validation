@@ -45,10 +45,14 @@ def grid_units(name: str) -> list[dict]:
         return list(_prod(kind=["train"], ic=[0.05, 0.10, 0.15, 0.20], style_vol_h=[0.02, 0.04],
                           drift=["regime"], style_share=[0.3], tail_df=[6.0], protocol=["p1", "p3"],
                           model=["reg"], data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
-    if name == "calib_e2e":
-        return list(_prod(kind=["train"], ic=[0.05], drift=["regime"], style_share=[0.3], tail_df=[6.0],
-                          lowvol_share=[0.2], protocol=["p3"], model=["e2e"], data_seed=[0],
-                          model_seed=[0, 1, 2], start_day=[1000]))
+    if name == "calib2":       # after calib: style_vol_h 0.04 matches the IC volatility; P1 now rolling 252/120
+        return list(_prod(kind=["train"], ic=[0.10, 0.15, 0.20], style_vol_h=[0.04], drift=["regime"],
+                          style_share=[0.3], tail_df=[6.0], protocol=["p1", "p1x", "p3"], model=["reg"],
+                          data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
+    if name == "calib_e2e":    # k/c inflation and top-of-ranking curve of decision-focused training
+        return list(_prod(kind=["train"], ic=[0.15, 0.20], style_vol_h=[0.04], drift=["regime"], style_share=[0.3],
+                          tail_df=[6.0], lowvol_share=[0.2], protocol=["p1", "p3"], model=["e2e", "reg"],
+                          data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
     if name == "A_main":       # A1-A3
         return list(_prod(kind=["train"], ic=[0.02, 0.05, 0.10, 0.20], drift=["none", "rw_slow", "rw_fast", "regime"],
                           style_share=[0.3], tail_df=[6.0], protocol=["p1", "p1c", "p2", "p3", "p4_504", "p5"],
