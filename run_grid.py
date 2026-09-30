@@ -61,6 +61,11 @@ def grid_units(name: str) -> list[dict]:
                         tail_df=[3.0], lowvol_share=[0.2, 0.4], protocol=["p3"], model=["reg"],
                         data_seed=[0], model_seed=[0, 1, 2], start_day=[1000]))
         return u
+    if name == "calib_top2":   # extreme low-vol stocks underperform: does decision-focused training push them to the top?
+        return list(_prod(kind=["train"], ic=[0.15], style_vol_h=[0.04], drift=["regime"], style_share=[0.3],
+                          tail_df=[3.0], lowvol_share=[0.3], lowvol_shape=["hump_drop"], protocol=["p3"],
+                          model=["reg", "e2e_fid"], risk=[5.0, 20.0], temp=[0.3], data_seed=[0],
+                          model_seed=[0, 1, 2], start_day=[1000]))
     if name == "A_main":       # A1-A3
         return list(_prod(kind=["train"], ic=[0.02, 0.05, 0.10, 0.20], drift=["none", "rw_slow", "rw_fast", "regime"],
                           style_share=[0.3], tail_df=[6.0], protocol=["p1", "p1c", "p2", "p3", "p4_504", "p5"],

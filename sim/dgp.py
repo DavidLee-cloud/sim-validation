@@ -40,6 +40,7 @@ class DGPConfig:
     nonlin_share: float = 0.5        # share of alpha variance from nonlinear terms
     tail_df: float = np.inf          # Student-t degrees of freedom of eps (inf = normal)
     lowvol_share: float = 0.0        # share of predictable variance from the inverted-U low-vol component
+    lowvol_shape: str = "hump"       # hump: peak inside the lowest 30%; hump_drop: same but the lowest 5% lose
     feat_phi: float = 0.99           # daily AR(1) persistence of features
     idio_vol_h: float = 0.09         # H-day idiosyncratic volatility of a median stock
     market_vol_h: float = 0.06       # H-day market volatility
@@ -160,7 +161,10 @@ def simulate(cfg: DGPConfig) -> Panel:
     style_u = _zscore(style_u)
 
     q = (np.argsort(np.argsort(x64[:, :, F_VOL], axis=1), axis=1) + 0.5) / n     # volatility rank in (0,1)
-    lowvol_u = _zscore(np.where(q < 0.3, np.sin(np.pi * q / 0.3), 0.0))         # hump inside the lowest 30%
+    lowvol_raw = np.where(q < 0.3, np.sin(np.pi * q / 0.3), 0.0)                  # hump inside the lowest 30%
+    if cfg.lowvol_shape == "hump_drop":
+        lowvol_raw = np.where(q < 0.05, -1.0, lowvol_raw)                        # the most defensive 5% underperform
+    lowvol_u = _zscore(lowvol_raw)
 
     shares = np.array([1 - cfg.style_share - cfg.lowvol_share, cfg.style_share, cfg.lowvol_share])
     if (shares < -1e-12).any():
