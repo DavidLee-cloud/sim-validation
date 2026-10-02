@@ -22,7 +22,6 @@ from pathlib import Path
 
 os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")   # MLflow 3.x refuses the file store otherwise
 
-import yaml
 
 BENCH = Path.home() / "ext" / "qlib" / "examples" / "benchmarks"
 CONFIGS = {"lgb": BENCH / "LightGBM" / "workflow_config_lightgbm_Alpha158.yaml",
@@ -92,7 +91,10 @@ def main() -> None:
     from qlib.utils import fill_placeholder, init_instance_by_config
     from qlib.workflow import R
 
-    cfg = yaml.safe_load(CONFIGS[a.model].read_text())
+    # parse exactly as qrun does (jinja render + ruamel YAML 1.2): PyYAML reads "lr: 2e-4" as a string
+    from qlib.cli.run import render_template
+    from ruamel.yaml import YAML
+    cfg = YAML(typ="safe", pure=True).load(render_template(str(CONFIGS[a.model])))
     qlib.init(**cfg["qlib_init"])
     task = cfg["task"]
     t0 = time.time()
