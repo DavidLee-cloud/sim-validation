@@ -23,8 +23,15 @@ OVERALL = ["IC", "ICIR", "Rank IC", "Rank ICIR", "ann_excess_w_cost", "ir_w_cost
 OFFICIAL = {"lgb": {"IC": (0.0448, 0.00), "ICIR": (0.3660, 0.00), "Rank IC": (0.0469, 0.00), "Rank ICIR": (0.3877, 0.00),
                     "ann_excess_w_cost": (0.0901, 0.00), "ir_w_cost": (1.0164, 0.00), "mdd_w_cost": (-0.1038, 0.00)},
             "mlp": {"IC": (0.0376, 0.00), "ICIR": (0.2846, 0.02), "Rank IC": (0.0429, 0.00), "Rank ICIR": (0.3220, 0.01),
-                    "ann_excess_w_cost": (0.0895, 0.02), "ir_w_cost": (1.1408, 0.23), "mdd_w_cost": (-0.1103, 0.02)}}
-NAMES = {"lgb": "LightGBM", "mlp": "MLP"}
+                    "ann_excess_w_cost": (0.0895, 0.02), "ir_w_cost": (1.1408, 0.23), "mdd_w_cost": (-0.1103, 0.02)},
+            # RNNs: README row "Alpha158(with selected 20 features)"
+            "gru": {"IC": (0.0315, 0.00), "ICIR": (0.2450, 0.04), "Rank IC": (0.0428, 0.00), "Rank ICIR": (0.3440, 0.03),
+                    "ann_excess_w_cost": (0.0344, 0.02), "ir_w_cost": (0.5160, 0.25), "mdd_w_cost": (-0.1017, 0.02)},
+            "lstm": {"IC": (0.0318, 0.00), "ICIR": (0.2367, 0.04), "Rank IC": (0.0435, 0.00), "Rank ICIR": (0.3389, 0.03),
+                     "ann_excess_w_cost": (0.0381, 0.03), "ir_w_cost": (0.5561, 0.46), "mdd_w_cost": (-0.1207, 0.04)},
+            "alstm": {"IC": (0.0362, 0.01), "ICIR": (0.2789, 0.06), "Rank IC": (0.0463, 0.01), "Rank ICIR": (0.3661, 0.05),
+                      "ann_excess_w_cost": (0.0470, 0.03), "ir_w_cost": (0.6992, 0.47), "mdd_w_cost": (-0.1072, 0.03)}}
+NAMES = {"lgb": "LightGBM", "mlp": "MLP", "gru": "GRU", "lstm": "LSTM", "alstm": "ALSTM"}
 
 
 def load(model: str) -> pd.DataFrame:

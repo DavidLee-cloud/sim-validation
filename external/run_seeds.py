@@ -26,7 +26,10 @@ import yaml
 
 BENCH = Path.home() / "ext" / "qlib" / "examples" / "benchmarks"
 CONFIGS = {"lgb": BENCH / "LightGBM" / "workflow_config_lightgbm_Alpha158.yaml",
-           "mlp": BENCH / "MLP" / "workflow_config_mlp_Alpha158.yaml"}
+           "mlp": BENCH / "MLP" / "workflow_config_mlp_Alpha158.yaml",
+           "gru": BENCH / "GRU" / "workflow_config_gru_Alpha158.yaml",
+           "lstm": BENCH / "LSTM" / "workflow_config_lstm_Alpha158.yaml",
+           "alstm": BENCH / "ALSTM" / "workflow_config_alstm_Alpha158.yaml"}
 RUNS = Path.home() / "ext" / "runs"
 YEARS = (2017, 2018, 2019, 2020)
 
@@ -44,7 +47,7 @@ def parse_seeds(s: str) -> list:
 def seeded_model_config(model_cfg: dict, seed) -> dict:
     cfg = copy.deepcopy(model_cfg)
     if seed is not None:
-        cfg["kwargs"]["seed"] = int(seed)          # LGBModel passes it to lightgbm params; DNNModelPytorch takes `seed`
+        cfg["kwargs"]["seed"] = int(seed)          # LGBModel passes it to lightgbm params; the pytorch models take `seed`
     return cfg
 
 
