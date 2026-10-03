@@ -1,0 +1,7 @@
+{
+ "label_1d": "Ref($close, -2)/Ref($close, -1) - 1",
+ "label_20d": "Ref($close, -21)/Ref($close, -1) - 1",
+ "label_rows": 261300,
+ "ic_check_max_abs_diff": 0.0,
+ "n_train_rows": 437944
+}
