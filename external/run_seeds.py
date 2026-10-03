@@ -29,6 +29,12 @@ CONFIGS = {"lgb": BENCH / "LightGBM" / "workflow_config_lightgbm_Alpha158.yaml",
            "gru": BENCH / "GRU" / "workflow_config_gru_Alpha158.yaml",
            "lstm": BENCH / "LSTM" / "workflow_config_lstm_Alpha158.yaml",
            "alstm": BENCH / "ALSTM" / "workflow_config_alstm_Alpha158.yaml"}
+# T17 fixed-budget variants: same official config, only n_epochs 20 and early_stop above it, and the model class
+# swapped for fixed_budget.py's wrapper that deploys the last epoch (Qlib reloads the best-validation epoch otherwise)
+VARIANTS = {"lstm_fb": ("lstm", "FixedBudgetLSTM"), "alstm_fb": ("alstm", "FixedBudgetALSTM")}
+FB_EPOCHS, FB_EARLY_STOP = 20, 1000
+for _v, (_base, _) in VARIANTS.items():
+    CONFIGS[_v] = CONFIGS[_base]
 RUNS = Path.home() / "ext" / "runs"
 YEARS = (2017, 2018, 2019, 2020)
 
@@ -97,6 +103,10 @@ def main() -> None:
     cfg = YAML(typ="safe", pure=True).load(render_template(str(CONFIGS[a.model])))
     qlib.init(**cfg["qlib_init"])
     task = cfg["task"]
+    if a.model in VARIANTS:
+        task["model"]["class"] = VARIANTS[a.model][1]
+        task["model"]["module_path"] = "fixed_budget"     # external/fixed_budget.py (this script's directory is on sys.path)
+        task["model"]["kwargs"].update(n_epochs=FB_EPOCHS, early_stop=FB_EARLY_STOP)
     t0 = time.time()
     dataset = init_instance_by_config(task["dataset"])
     t_data = time.time() - t0
@@ -117,7 +127,7 @@ def main() -> None:
             res = metrics(rec)
             pred = rec.load_object("pred.pkl")
         pred.to_pickle(out_dir / f"seed_{tag}_pred.pkl")
-        res.update(model=a.model, seed=seed, config=str(CONFIGS[a.model]), dataset_sec=round(t_data, 1),
+        res.update(model=a.model, seed=seed, config=str(CONFIGS[a.model]), model_cfg=task["model"], dataset_sec=round(t_data, 1),
                    fit_sec=round(t_fit, 1), total_sec=round(time.time() - t1, 1))
         tmp = out_dir / f"seed_{tag}.json.tmp"
         tmp.write_text(json.dumps(res, indent=1), encoding="utf-8")
