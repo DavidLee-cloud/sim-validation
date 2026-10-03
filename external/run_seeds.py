@@ -29,11 +29,14 @@ CONFIGS = {"lgb": BENCH / "LightGBM" / "workflow_config_lightgbm_Alpha158.yaml",
            "gru": BENCH / "GRU" / "workflow_config_gru_Alpha158.yaml",
            "lstm": BENCH / "LSTM" / "workflow_config_lstm_Alpha158.yaml",
            "alstm": BENCH / "ALSTM" / "workflow_config_alstm_Alpha158.yaml"}
-# T17 fixed-budget variants: same official config, only n_epochs 20 and early_stop above it, and the model class
-# swapped for fixed_budget.py's wrapper that deploys the last epoch (Qlib reloads the best-validation epoch otherwise)
-VARIANTS = {"lstm_fb": ("lstm", "FixedBudgetLSTM"), "alstm_fb": ("alstm", "FixedBudgetALSTM")}
-FB_EPOCHS, FB_EARLY_STOP = 20, 1000
-for _v, (_base, _) in VARIANTS.items():
+# T17 / T18-A fixed-budget variants: same official config, only n_epochs and early_stop (above n_epochs, so it never
+# triggers), and the model class swapped for fixed_budget.py's wrapper that deploys the last epoch (Qlib reloads the
+# best-validation epoch otherwise). name -> (base, class, n_epochs, extra deployed epochs). Training up to epoch e does
+# not depend on n_epochs, so the 10-epoch run also writes the 5-epoch result (as <base>_fb5).
+VARIANTS = {"lstm_fb": ("lstm", "FixedBudgetLSTM", 20, ()), "alstm_fb": ("alstm", "FixedBudgetALSTM", 20, ()),
+            "lstm_fb10": ("lstm", "FixedBudgetLSTM", 10, (5,)), "alstm_fb10": ("alstm", "FixedBudgetALSTM", 10, (5,))}
+FB_EARLY_STOP = 1000
+for _v, (_base, *_rest) in VARIANTS.items():
     CONFIGS[_v] = CONFIGS[_base]
 RUNS = Path.home() / "ext" / "runs"
 YEARS = (2017, 2018, 2019, 2020)
@@ -54,6 +57,17 @@ def seeded_model_config(model_cfg: dict, seed) -> dict:
     if seed is not None:
         cfg["kwargs"]["seed"] = int(seed)          # LGBModel passes it to lightgbm params; the pytorch models take `seed`
     return cfg
+
+
+def ensure_experiment(R, name: str) -> None:
+    """create the MLflow experiment up front; two processes creating it at once raise ExpAlreadyExistError (T17)."""
+    for attempt in range(3):
+        try:
+            R.get_exp(experiment_name=name, create=True)
+            return
+        except Exception:
+            time.sleep(5 * (attempt + 1))
+    R.get_exp(experiment_name=name, create=False)
 
 
 def metrics(rec) -> dict:
@@ -103,10 +117,13 @@ def main() -> None:
     cfg = YAML(typ="safe", pure=True).load(render_template(str(CONFIGS[a.model])))
     qlib.init(**cfg["qlib_init"])
     task = cfg["task"]
+    deploys = [(a.model, None)]                        # (output name, epoch to deploy; None = as trained)
     if a.model in VARIANTS:
-        task["model"]["class"] = VARIANTS[a.model][1]
+        base, cls, n_epochs, extra = VARIANTS[a.model]
+        task["model"]["class"] = cls
         task["model"]["module_path"] = "fixed_budget"     # external/fixed_budget.py (this script's directory is on sys.path)
-        task["model"]["kwargs"].update(n_epochs=FB_EPOCHS, early_stop=FB_EARLY_STOP)
+        task["model"]["kwargs"].update(n_epochs=n_epochs, early_stop=FB_EARLY_STOP)
+        deploys += [(f"{base}_fb{e}", e) for e in extra]
     t0 = time.time()
     dataset = init_instance_by_config(task["dataset"])
     t_data = time.time() - t0
@@ -115,25 +132,35 @@ def main() -> None:
     for seed in seeds:
         tag = "none" if seed is None else f"{seed:02d}"
         t1 = time.time()
-        with R.start(experiment_name=f"{a.model}_seeds", recorder_name=f"seed_{tag}"):
-            rec = R.get_recorder()
-            model = init_instance_by_config(seeded_model_config(task["model"], seed))
-            model.fit(dataset)
-            t_fit = time.time() - t1
-            records = fill_placeholder(copy.deepcopy(task["record"]), {"<MODEL>": model, "<DATASET>": dataset})
-            for r in records:
-                init_instance_by_config(r, recorder=rec, default_module="qlib.workflow.record_temp",
-                                        try_kwargs={"model": model, "dataset": dataset}).generate()
-            res = metrics(rec)
-            pred = rec.load_object("pred.pkl")
-        pred.to_pickle(out_dir / f"seed_{tag}_pred.pkl")
-        res.update(model=a.model, seed=seed, config=str(CONFIGS[a.model]), model_cfg=task["model"], dataset_sec=round(t_data, 1),
-                   fit_sec=round(t_fit, 1), total_sec=round(time.time() - t1, 1))
-        tmp = out_dir / f"seed_{tag}.json.tmp"
-        tmp.write_text(json.dumps(res, indent=1), encoding="utf-8")
-        tmp.replace(out_dir / f"seed_{tag}.json")
-        print(f"[{a.model} seed {tag}] IC={res['IC']:.4f} RankIC={res['Rank IC']:.4f} "
-              f"exc_w_cost={res['ann_excess_w_cost']:.4f} IR={res['ir_w_cost']:.3f} sec={res['total_sec']}", flush=True)
+        model = init_instance_by_config(seeded_model_config(task["model"], seed))
+        for i, (name, epoch) in enumerate(deploys):
+            dname = RUNS / name
+            dname.mkdir(parents=True, exist_ok=True)
+            ensure_experiment(R, f"{name}_seeds")
+            with R.start(experiment_name=f"{name}_seeds", recorder_name=f"seed_{tag}"):
+                rec = R.get_recorder()
+                if i == 0:                                     # train inside the first recorder (MLP logs metrics to it)
+                    model.fit(dataset)
+                    t_fit = time.time() - t1
+                if epoch is not None:
+                    model.deploy_epoch(epoch)
+                records = fill_placeholder(copy.deepcopy(task["record"]), {"<MODEL>": model, "<DATASET>": dataset})
+                for r in records:
+                    init_instance_by_config(r, recorder=rec, default_module="qlib.workflow.record_temp",
+                                            try_kwargs={"model": model, "dataset": dataset}).generate()
+                res = metrics(rec)
+                pred = rec.load_object("pred.pkl")
+            pred.to_pickle(dname / f"seed_{tag}_pred.pkl")
+            mcfg = copy.deepcopy(task["model"])
+            if epoch is not None:
+                mcfg["deployed_epoch"] = epoch
+            res.update(model=name, seed=seed, config=str(CONFIGS[a.model]), model_cfg=mcfg, dataset_sec=round(t_data, 1),
+                       fit_sec=round(t_fit, 1), total_sec=round(time.time() - t1, 1))
+            tmp = dname / f"seed_{tag}.json.tmp"
+            tmp.write_text(json.dumps(res, indent=1), encoding="utf-8")
+            tmp.replace(dname / f"seed_{tag}.json")
+            print(f"[{name} seed {tag}] IC={res['IC']:.4f} RankIC={res['Rank IC']:.4f} "
+                  f"exc_w_cost={res['ann_excess_w_cost']:.4f} IR={res['ir_w_cost']:.3f} sec={res['total_sec']}", flush=True)
 
 
 if __name__ == "__main__":
