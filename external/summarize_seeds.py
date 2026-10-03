@@ -33,10 +33,19 @@ OFFICIAL = {"lgb": {"IC": (0.0448, 0.00), "ICIR": (0.3660, 0.00), "Rank IC": (0.
             "alstm": {"IC": (0.0362, 0.01), "ICIR": (0.2789, 0.06), "Rank IC": (0.0463, 0.01), "Rank ICIR": (0.3661, 0.05),
                       "ann_excess_w_cost": (0.0470, 0.03), "ir_w_cost": (0.6992, 0.47), "mdd_w_cost": (-0.1072, 0.03)}}
 NAMES = {"lgb": "LightGBM", "mlp": "MLP", "gru": "GRU", "lstm": "LSTM", "alstm": "ALSTM",
-         "lstm_fb": "LSTM 固定预算", "alstm_fb": "ALSTM 固定预算"}
+         "lstm_fb": "LSTM 固定预算", "alstm_fb": "ALSTM 固定预算",
+         "lstm_fb5": "LSTM 固定 5 轮", "lstm_fb10": "LSTM 固定 10 轮", "alstm_fb5": "ALSTM 固定 5 轮", "alstm_fb10": "ALSTM 固定 10 轮",
+         "lstm_proto": "LSTM 完整协议", "alstm_proto": "ALSTM 完整协议",
+         "lstm_esyr": "LSTM 早停＋按年重训", "alstm_esyr": "ALSTM 早停＋按年重训"}
 # T17 variants (run_seeds.py VARIANTS): the official config except these two settings and the deployed epoch
 NOTES = {m: "与官方配置只差两处：n_epochs 20、early_stop 1000（不触发早停），并部署第 20 轮的参数而非验证最优轮"
             "（`external/fixed_budget.py`）。官方 README 无此设定，故无对照值。" for m in ("lstm_fb", "alstm_fb")}
+NOTES.update({f"{m}_fb{e}": f"与官方配置只差：n_epochs {e}（一次 10 轮训练，第 5、10 轮各部署一次）、early_stop 1000，部署第 {e} 轮的参数"
+              "（`external/fixed_budget.py`）。" for m in ("lstm", "alstm") for e in (5, 10)})
+NOTES.update({f"{m}_proto": "完整固定预算协议（T18-B，`external/run_yearly.py`）：按年从新训练、扩展窗口，固定 20 轮部署最后一轮，"
+              "余弦学习率，AdamW 0.03，近期加权抽样（半衰期 504 日）。" for m in ("lstm", "alstm")})
+NOTES.update({f"{m}_esyr": "官方早停但按年从新训练、扩展窗口，验证段为训练段末 2 年（T18-C，`external/run_yearly.py`）。"
+              for m in ("lstm", "alstm")})
 
 
 def load(model: str) -> pd.DataFrame:
