@@ -2,6 +2,7 @@
 """Summarize ~/ext/runs/<model>/seed_XX.json (written by run_seeds.py) into results/external/.
 
     .venv/bin/python external/summarize_seeds.py lgb mlp
+    .venv/bin/python external/summarize_seeds.py --stem seeds_fixed_budget lstm_fb alstm_fb
 
 Writes results/external/seeds_<models>.csv (one row per model x seed, overall and per-year metrics)
 and results/external/seeds_<models>.md (per-seed tables, mean/sd vs the Qlib README).
@@ -31,7 +32,11 @@ OFFICIAL = {"lgb": {"IC": (0.0448, 0.00), "ICIR": (0.3660, 0.00), "Rank IC": (0.
                      "ann_excess_w_cost": (0.0381, 0.03), "ir_w_cost": (0.5561, 0.46), "mdd_w_cost": (-0.1207, 0.04)},
             "alstm": {"IC": (0.0362, 0.01), "ICIR": (0.2789, 0.06), "Rank IC": (0.0463, 0.01), "Rank ICIR": (0.3661, 0.05),
                       "ann_excess_w_cost": (0.0470, 0.03), "ir_w_cost": (0.6992, 0.47), "mdd_w_cost": (-0.1072, 0.03)}}
-NAMES = {"lgb": "LightGBM", "mlp": "MLP", "gru": "GRU", "lstm": "LSTM", "alstm": "ALSTM"}
+NAMES = {"lgb": "LightGBM", "mlp": "MLP", "gru": "GRU", "lstm": "LSTM", "alstm": "ALSTM",
+         "lstm_fb": "LSTM 固定预算", "alstm_fb": "ALSTM 固定预算"}
+# T17 variants (run_seeds.py VARIANTS): the official config except these two settings and the deployed epoch
+NOTES = {m: "与官方配置只差两处：n_epochs 20、early_stop 1000（不触发早停），并部署第 20 轮的参数而非验证最优轮"
+            "（`external/fixed_budget.py`）。官方 README 无此设定，故无对照值。" for m in ("lstm_fb", "alstm_fb")}
 
 
 def load(model: str) -> pd.DataFrame:
@@ -52,11 +57,15 @@ def fmt(x: float, nd: int = 4) -> str:
 
 
 def main() -> None:
-    models = sys.argv[1:] or ["lgb", "mlp"]
+    args = sys.argv[1:]
+    stem = None
+    if args[:1] == ["--stem"]:
+        stem, args = args[1], args[2:]
+    models = args or ["lgb", "mlp"]
     df = pd.concat([load(m) for m in models], ignore_index=True)
     out = ROOT / "results" / "external"
     out.mkdir(parents=True, exist_ok=True)
-    stem = "seeds_" + "_".join(models)
+    stem = stem or "seeds_" + "_".join(models)
     df.to_csv(out / f"{stem}.csv", index=False, float_format="%.6f")
 
     L = [f"# 外部复现：{'、'.join(NAMES[m] for m in models)} 多种子（Qlib，沪深300，Alpha158）", "",
@@ -66,9 +75,9 @@ def main() -> None:
         d = df[df.model == m].sort_values("seed")
         n = len(d)
         L += [f"## {NAMES[m]}（{n} 个种子）", "", "### 与官方对照（均值 ± 标准差）", "",
-              "| 指标 | 本次 | 官方 README |", "|---|---|---|"]
+              *([NOTES[m], ""] if m in NOTES else []), "| 指标 | 本次 | 官方 README |", "|---|---|---|"]
         for k in OVERALL:
-            o = OFFICIAL[m].get(k)
+            o = OFFICIAL.get(m, {}).get(k)
             L.append(f"| {k} | {fmt(d[k].mean())} ± {fmt(d[k].std(ddof=1))}（{fmt(d[k].min())}—{fmt(d[k].max())}） | "
                      + (f"{o[0]:.4f} ± {o[1]:.2f}" if o else "—") + " |")
         L += ["", "### 按年份（各种子均值 ± 标准差）", "",
