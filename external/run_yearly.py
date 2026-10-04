@@ -94,6 +94,12 @@ def main() -> None:
 
     t1 = time.time()
     preds, labels, info = [], [], {}
+    stash = {k: out_dir / f"seed_{tag}_{k}" for k in ("pred.pkl", "label.pkl", "info.json")}   # trained, not yet recorded
+    if all(f.exists() for f in stash.values()):
+        print(f"[{name} seed {tag}] resuming from saved predictions (training already done)", flush=True)
+        preds, labels = [pd.read_pickle(stash["pred.pkl"])], [pd.read_pickle(stash["label.pkl"])]
+        info = json.loads(stash["info.json"].read_text(encoding="utf-8"))
+        years = ()
     for Y in years:
         ty = time.time()
         split = year_split(arm, Y)
@@ -121,6 +127,10 @@ def main() -> None:
 
     pred = pd.concat(preds).sort_index()
     label = pd.concat(labels).sort_index()
+    if not stash["info.json"].exists():
+        pred.to_pickle(stash["pred.pkl"])
+        label.to_pickle(stash["label.pkl"])
+        stash["info.json"].write_text(json.dumps(info, indent=1, default=float), encoding="utf-8")
     check = None
     if arm == "C":                                        # 2017 uses exactly the official split
         ref = RUNS / base / f"seed_{tag}_pred.pkl"
@@ -130,14 +140,22 @@ def main() -> None:
             idx = mine.index[mine.index.get_level_values("datetime").year == 2017]
             check = float((mine.loc[idx] - r.reindex(idx)).abs().max())
     ensure_experiment(R, f"{name}_seeds")
-    with R.start(experiment_name=f"{name}_seeds", recorder_name=f"seed_{tag}"):
-        rec = R.get_recorder()
-        rec.save_objects(**{"pred.pkl": pred, "label.pkl": label})
-        for r in task["record"]:
-            if r["class"] == "SignalRecord":
-                continue
-            init_instance_by_config(r, recorder=rec, default_module="qlib.workflow.record_temp").generate()
-        res = metrics(rec)
+    for attempt in range(3):      # MLflow's file store can read back a just-logged metric file as empty ("malformed")
+        try:
+            with R.start(experiment_name=f"{name}_seeds", recorder_name=f"seed_{tag}" + (f"_retry{attempt}" if attempt else "")):
+                rec = R.get_recorder()
+                rec.save_objects(**{"pred.pkl": pred, "label.pkl": label})
+                for r in task["record"]:
+                    if r["class"] == "SignalRecord":
+                        continue
+                    init_instance_by_config(r, recorder=rec, default_module="qlib.workflow.record_temp").generate()
+                res = metrics(rec)
+            break
+        except ValueError as e:
+            if "malformed" not in str(e) or attempt == 2:
+                raise
+            print(f"[{name} seed {tag}] MLflow metric read failed ({e}); retrying in a new recorder", flush=True)
+            time.sleep(10)
     pred.to_pickle(out_dir / f"seed_{tag}_pred.pkl")
     res.update(model=name, seed=a.seed, config=str(CONFIGS[base]), model_cfg=model_cfg, arm=arm, yearly=info,
                check_2017_max_abs_diff=check, fit_sec=round(sum(v["fit_sec"] for v in info.values()), 1),
@@ -145,6 +163,8 @@ def main() -> None:
     tmp = out_dir / f"seed_{tag}.json.tmp"
     tmp.write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
     tmp.replace(out_dir / f"seed_{tag}.json")
+    for k in ("label.pkl", "info.json"):
+        stash[k].unlink(missing_ok=True)
     print(f"[{name} seed {tag}] IC={res['IC']:.4f} RankIC={res['Rank IC']:.4f} exc_w_cost={res['ann_excess_w_cost']:.4f} "
           f"IR={res['ir_w_cost']:.3f} check2017={check} sec={res['total_sec']}", flush=True)
 
