@@ -35,15 +35,17 @@ OFFICIAL = {"lgb": {"IC": (0.0448, 0.00), "ICIR": (0.3660, 0.00), "Rank IC": (0.
 NAMES = {"lgb": "LightGBM", "mlp": "MLP", "gru": "GRU", "lstm": "LSTM", "alstm": "ALSTM",
          "lstm_fb": "LSTM 固定预算", "alstm_fb": "ALSTM 固定预算",
          "lstm_fb5": "LSTM 固定 5 轮", "lstm_fb10": "LSTM 固定 10 轮", "alstm_fb5": "ALSTM 固定 5 轮", "alstm_fb10": "ALSTM 固定 10 轮",
-         "lstm_proto": "LSTM 完整协议", "alstm_proto": "ALSTM 完整协议",
+         "lstm_proto": "LSTM 完整协议 20 轮", "alstm_proto": "ALSTM 完整协议 20 轮",
+         "lstm_proto10": "LSTM 完整协议 10 轮", "alstm_proto10": "ALSTM 完整协议 10 轮",
          "lstm_esyr": "LSTM 早停＋按年重训", "alstm_esyr": "ALSTM 早停＋按年重训"}
 # T17 variants (run_seeds.py VARIANTS): the official config except these two settings and the deployed epoch
 NOTES = {m: "与官方配置只差两处：n_epochs 20、early_stop 1000（不触发早停），并部署第 20 轮的参数而非验证最优轮"
             "（`external/fixed_budget.py`）。官方 README 无此设定，故无对照值。" for m in ("lstm_fb", "alstm_fb")}
 NOTES.update({f"{m}_fb{e}": f"与官方配置只差：n_epochs {e}（一次 10 轮训练，第 5、10 轮各部署一次）、early_stop 1000，部署第 {e} 轮的参数"
               "（`external/fixed_budget.py`）。" for m in ("lstm", "alstm") for e in (5, 10)})
-NOTES.update({f"{m}_proto": "完整固定预算协议（T18-B，`external/run_yearly.py`）：按年从新训练、扩展窗口，固定 20 轮部署最后一轮，"
-              "余弦学习率，AdamW 0.03，近期加权抽样（半衰期 504 日）。" for m in ("lstm", "alstm")})
+NOTES.update({f"{m}_proto{t}": f"完整固定预算协议（T18-B{e}，`external/run_yearly.py`）：按年从新训练、扩展窗口，固定 {e} 轮部署最后一轮，"
+              "余弦学习率，AdamW 0.03，近期加权抽样（半衰期 504 日）。" + ("只跑种子 0—4（描述性）。" if e == 20 else
+              "10 轮参考了 A 的轮数曲线，未取其最优点 5 轮。") for m in ("lstm", "alstm") for t, e in (("", 20), ("10", 10))})
 NOTES.update({f"{m}_esyr": "官方早停但按年从新训练、扩展窗口，验证段为训练段末 2 年（T18-C，`external/run_yearly.py`）。"
               for m in ("lstm", "alstm")})
 
