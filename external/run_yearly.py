@@ -6,9 +6,9 @@ Alpha158 config; the model predicts year Y only (2020: to 2020-08-01). The four 
 and go through Qlib's own SigAnaRecord and PortAnaRecord (same backtest and costs as the official config), so the
 output (~/ext/runs/<name>/seed_XX.json and _pred.pkl) has the same format as run_seeds.py.
 
-  <m>_proto (B, full fixed-budget protocol, fixed_budget.Protocol*): train 2008-01-01 .. (Y-1)-12-31; no validation
-      set for model selection (the valid segment is the last month of the training segment, logged only);
-      20 epochs, deploy the last; AdamW 0.03; cosine lr; recency-weighted sampling, half-life 504 trading days.
+  <m>_proto / <m>_proto10 (B20 / B10, full fixed-budget protocol, fixed_budget.Protocol*): train 2008-01-01 ..
+      (Y-1)-12-31; no validation set for model selection (the valid segment is the last month of the training
+      segment, logged only); 20 / 10 epochs, deploy the last; AdamW 0.03; cosine lr; recency-weighted sampling, half-life 504 trading days.
   <m>_esyr (C, official early stopping, retrained yearly): official model class and kwargs; train
       2008-01-01 .. (Y-3)-12-31, valid (Y-2)-01-01 .. (Y-1)-12-31 (two years, like the official split).
 In both, the feature normalization is fitted on the training segment (fit_end_time = end of the training segment),
@@ -35,9 +35,14 @@ import pandas as pd
 
 from run_seeds import CONFIGS, RUNS, ensure_experiment, metrics, seeded_model_config  # noqa: E402
 
-ARMS = {"lstm_proto": ("lstm", "B"), "alstm_proto": ("alstm", "B"), "lstm_esyr": ("lstm", "C"), "alstm_esyr": ("alstm", "C")}
+# name -> (base, arm, protocol epochs). B20 (<m>_proto) was stopped after seeds 0-4 (2026-10-04): A showed 20 bare epochs
+# over-train in Qlib and the first B20 seeds agreed. B10 (<m>_proto10) uses 10 epochs; 10 rather than A's best 5 so as
+# not to pick the epoch count on the test period (10 was still informed by A's epoch curve).
+ARMS = {"lstm_proto": ("lstm", "B", 20), "alstm_proto": ("alstm", "B", 20),
+        "lstm_proto10": ("lstm", "B", 10), "alstm_proto10": ("alstm", "B", 10),
+        "lstm_esyr": ("lstm", "C", None), "alstm_esyr": ("alstm", "C", None)}
 PROTO_CLASS = {"lstm": "ProtocolLSTM", "alstm": "ProtocolALSTM"}
-PROTO_KW = dict(n_epochs=20, adamw_weight_decay=0.03, half_life=504.0)
+PROTO_KW = dict(adamw_weight_decay=0.03, half_life=504.0)
 YEARS = (2017, 2018, 2019, 2020)
 DATA_START, DATA_END = "2008-01-01", "2020-08-01"
 
@@ -58,7 +63,7 @@ def main() -> None:
     ap.add_argument("--model", choices=sorted(ARMS), required=True)
     ap.add_argument("--seed", type=int, required=True)
     a = ap.parse_args()
-    base, arm = ARMS[a.model]
+    base, arm, epochs = ARMS[a.model]
     years = tuple(int(y) for y in os.environ.get("T18_YEARS", ",".join(map(str, YEARS))).split(","))  # smoke tests only
     name = a.model + os.environ.get("T18_SUFFIX", "")
     out_dir = RUNS / name
@@ -82,7 +87,7 @@ def main() -> None:
     model_cfg = copy.deepcopy(task["model"])
     if arm == "B":
         model_cfg["class"], model_cfg["module_path"] = PROTO_CLASS[base], "fixed_budget"
-        model_cfg["kwargs"].update(PROTO_KW)
+        model_cfg["kwargs"].update(PROTO_KW, n_epochs=epochs)
         if os.environ.get("T18_EPOCHS"):                  # smoke tests only
             model_cfg["kwargs"]["n_epochs"] = int(os.environ["T18_EPOCHS"])
     model_cfg = seeded_model_config(model_cfg, a.seed)
