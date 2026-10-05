@@ -151,7 +151,7 @@ def main() -> None:
                     init_instance_by_config(r, recorder=rec, default_module="qlib.workflow.record_temp").generate()
                 res = metrics(rec)
             break
-        except ValueError as e:
+        except Exception as e:    # ValueError, or Qlib's LoadObjectError wrapping it
             if "malformed" not in str(e) or attempt == 2:
                 raise
             print(f"[{name} seed {tag}] MLflow metric read failed ({e}); retrying in a new recorder", flush=True)

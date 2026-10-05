@@ -25,7 +25,7 @@ YEARS = ("2017", "2018", "2019", "2020")
 
 
 def load(model: str) -> dict:
-    return {int(f.name[5:7]): json.loads(f.read_text(encoding="utf-8")) for f in sorted((RUNS / model).glob("seed_[0-9]*.json"))}
+    return {int(f.name[5:7]): json.loads(f.read_text(encoding="utf-8")) for f in sorted((RUNS / model).glob("seed_[0-9][0-9].json"))}
 
 
 def row(name: str, es: np.ndarray, fb: np.ndarray) -> str:

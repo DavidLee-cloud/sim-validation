@@ -52,7 +52,7 @@ NOTES.update({f"{m}_esyr": "官方早停但按年从新训练、扩展窗口，�
 
 def load(model: str) -> pd.DataFrame:
     rows = []
-    for f in sorted((RUNS / model).glob("seed_[0-9]*.json")):
+    for f in sorted((RUNS / model).glob("seed_[0-9][0-9].json")):
         d = json.loads(f.read_text(encoding="utf-8"))
         r = {"model": model, "seed": d["seed"], **{k: d[k] for k in OVERALL}}
         for y in YEARS:

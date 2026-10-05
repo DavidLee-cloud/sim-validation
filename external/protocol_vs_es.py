@@ -39,7 +39,7 @@ YEARS = ("2017", "2018", "2019", "2020")
 
 def load(name: str) -> dict:
     d = RUNS / name
-    return {int(f.name[5:7]): json.loads(f.read_text(encoding="utf-8")) for f in sorted(d.glob("seed_[0-9]*.json"))} if d.exists() else {}
+    return {int(f.name[5:7]): json.loads(f.read_text(encoding="utf-8")) for f in sorted(d.glob("seed_[0-9][0-9].json"))} if d.exists() else {}
 
 
 def val(r: dict, k: str, y: str | None = None) -> float:
