@@ -101,6 +101,13 @@ def main() -> None:
         info = json.loads(stash["info.json"].read_text(encoding="utf-8"))
         years = ()
     for Y in years:
+        ystash = out_dir / f"seed_{tag}_y{Y}.pkl"      # per-year checkpoint (container restarts); each year's model
+        if ystash.exists():                             # is freshly built and reseeded, so resuming changes nothing
+            p, lab, info[str(Y)] = pd.read_pickle(ystash)
+            preds.append(p)
+            labels.append(lab)
+            print(f"[{name} seed {tag} year {Y}] loaded from checkpoint", flush=True)
+            continue
         ty = time.time()
         split = year_split(arm, Y)
         ds_cfg = copy.deepcopy(task["dataset"])
@@ -122,6 +129,8 @@ def main() -> None:
                         "best_epoch": (int(max(range(len(valid)), key=valid.__getitem__)) + 1) if valid else None}
         print(f"[{name} seed {tag} year {Y}] epochs={len(valid)} best={info[str(Y)]['best_epoch']} "
               f"sec={time.time() - ty:.0f}", flush=True)
+        pd.to_pickle((preds[-1], labels[-1], info[str(Y)]), str(ystash) + ".tmp")
+        os.replace(str(ystash) + ".tmp", ystash)
         del dataset, model
         gc.collect()
 
@@ -165,6 +174,8 @@ def main() -> None:
     tmp.replace(out_dir / f"seed_{tag}.json")
     for k in ("label.pkl", "info.json"):
         stash[k].unlink(missing_ok=True)
+    for Y in YEARS:
+        (out_dir / f"seed_{tag}_y{Y}.pkl").unlink(missing_ok=True)
     print(f"[{name} seed {tag}] IC={res['IC']:.4f} RankIC={res['Rank IC']:.4f} exc_w_cost={res['ann_excess_w_cost']:.4f} "
           f"IR={res['ir_w_cost']:.3f} check2017={check} sec={res['total_sec']}", flush=True)
 
