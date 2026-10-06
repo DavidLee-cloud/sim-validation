@@ -40,7 +40,11 @@ from run_seeds import CONFIGS, RUNS, ensure_experiment, metrics, seeded_model_co
 # not to pick the epoch count on the test period (10 was still informed by A's epoch curve).
 ARMS = {"lstm_proto": ("lstm", "B", 20), "alstm_proto": ("alstm", "B", 20),
         "lstm_proto10": ("lstm", "B", 10), "alstm_proto10": ("alstm", "B", 10),
-        "lstm_esyr": ("lstm", "C", None), "alstm_esyr": ("alstm", "C", None)}
+        "lstm_esyr": ("lstm", "C", None), "alstm_esyr": ("alstm", "C", None),
+        # T20-D4: the T18-A base (Qlib's fit, Adam, constant lr, uniform sampling, deploy epoch 10) retrained yearly on
+        # B's expanding window; <m>_bon = every protocol switch on (= B10), a check that must reproduce <m>_proto10
+        "lstm_d4": ("lstm", "D4", 10), "alstm_d4": ("alstm", "D4", 10), "lstm_bon": ("lstm", "B", 10)}
+FB_CLASS = {"lstm": "FixedBudgetLSTM", "alstm": "FixedBudgetALSTM"}
 PROTO_CLASS = {"lstm": "ProtocolLSTM", "alstm": "ProtocolALSTM"}
 PROTO_KW = dict(adamw_weight_decay=0.03, half_life=504.0)
 YEARS = (2017, 2018, 2019, 2020)
@@ -49,7 +53,7 @@ DATA_START, DATA_END = "2008-01-01", "2020-08-01"
 
 def year_split(arm: str, Y: int) -> dict:
     test = (f"{Y}-01-01", min(f"{Y}-12-31", DATA_END))
-    if arm == "B":
+    if arm in ("B", "D4"):
         train = (DATA_START, f"{Y - 1}-12-31")
         valid = (f"{Y - 1}-12-01", f"{Y - 1}-12-31")       # last month of the training segment, logged only
     else:
@@ -90,6 +94,9 @@ def main() -> None:
         model_cfg["kwargs"].update(PROTO_KW, n_epochs=epochs)
         if os.environ.get("T18_EPOCHS"):                  # smoke tests only
             model_cfg["kwargs"]["n_epochs"] = int(os.environ["T18_EPOCHS"])
+    elif arm == "D4":
+        model_cfg["class"], model_cfg["module_path"] = FB_CLASS[base], "fixed_budget"
+        model_cfg["kwargs"].update(n_epochs=epochs, early_stop=1000)
     model_cfg = seeded_model_config(model_cfg, a.seed)
 
     t1 = time.time()

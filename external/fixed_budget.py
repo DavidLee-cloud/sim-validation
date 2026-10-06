@@ -17,6 +17,12 @@ ProtocolLSTM / ProtocolALSTM (T18-B): the full fixed-budget protocol of paper si
   over a 9-12 year window would shrink the effective learning rate);
 - no evaluation pass over the training set (Qlib's fit spends ~40% of each epoch on it; it does not affect training).
 The per-batch step is Qlib's own train_epoch (masked MSE, gradient clipping 3.0).
+
+T20 (one component at a time) uses the same classes with independent switches (defaults = the T18-B protocol):
+cosine (bool), adamw_weight_decay (None = Qlib's Adam), half_life (None = Qlib's uniform shuffling) and train_eval.
+train_eval=True adds Qlib's per-epoch evaluation pass over the shuffled training loader; it does not change training
+but each DataLoader pass draws from the global torch RNG, so with every switch off and train_eval=True the fit is
+step-for-step Qlib's own (deploying the last epoch), i.e. the bare fixed budget of T18-A.
 """
 from __future__ import annotations
 
@@ -64,11 +70,15 @@ class FixedBudgetALSTM(_DeployLastEpoch, ALSTM):
 class _Protocol:
     _net_attr = ""
 
-    def __init__(self, *args, adamw_weight_decay=0.03, half_life=504.0, lr_floor=0.01, **kwargs):
+    def __init__(self, *args, adamw_weight_decay=0.03, half_life=504.0, lr_floor=0.01, cosine=True, train_eval=False,
+                 **kwargs):
         super().__init__(*args, **kwargs)
         self.adamw_weight_decay, self.half_life, self.lr_floor = adamw_weight_decay, half_life, lr_floor
+        self.cosine, self.train_eval = cosine, train_eval
 
     def lr_at(self, e: int) -> float:
+        if not self.cosine:
+            return self.lr
         E = self.n_epochs
         cos = 0.5 * (1 + math.cos(math.pi * e / (E - 1))) if E > 1 else 1.0
         return self.lr * (self.lr_floor + (1 - self.lr_floor) * cos)
@@ -85,22 +95,33 @@ class _Protocol:
         dl_valid = dataset.prepare("valid", col_set=["feature", "label"], data_key=DataHandlerLP.DK_L)
         dl_train.config(fillna_type="ffill+bfill")
         dl_valid.config(fillna_type="ffill+bfill")
-        w = self.recency_weights(dl_train)
-        sampler = WeightedRandomSampler(torch.as_tensor(w, dtype=torch.double), num_samples=len(dl_train), replacement=True)
-        train_loader = DataLoader(ConcatDataset(dl_train, np.ones(len(dl_train))), batch_size=self.batch_size,
-                                  sampler=sampler, num_workers=self.n_jobs, drop_last=True)
+        train_ds = ConcatDataset(dl_train, np.ones(len(dl_train)))
+        if self.half_life:
+            w = self.recency_weights(dl_train)
+            sampler = WeightedRandomSampler(torch.as_tensor(w, dtype=torch.double), num_samples=len(dl_train), replacement=True)
+            train_loader = DataLoader(train_ds, batch_size=self.batch_size, sampler=sampler, num_workers=self.n_jobs,
+                                      drop_last=True)
+            last_year = w >= 2.0 ** (-252 / self.half_life)          # samples within 252 trading days of the training end
+            self.logger.info("protocol: %d samples, recency weight min %.4f, sampling share of the last 252 days %.3f",
+                             len(w), w.min(), w[last_year].sum() / w.sum())
+        else:                                                    # as Qlib's fit
+            train_loader = DataLoader(train_ds, batch_size=self.batch_size, shuffle=True, num_workers=self.n_jobs,
+                                      drop_last=True)
         valid_loader = DataLoader(ConcatDataset(dl_valid, np.ones(len(dl_valid))), batch_size=self.batch_size,
                                   shuffle=False, num_workers=self.n_jobs, drop_last=False)
-        self.train_optimizer = torch.optim.AdamW(net.parameters(), lr=self.lr, weight_decay=self.adamw_weight_decay)
+        if self.adamw_weight_decay is not None:
+            self.train_optimizer = torch.optim.AdamW(net.parameters(), lr=self.lr, weight_decay=self.adamw_weight_decay)
+        # else: Qlib's own optimizer, built in __init__ (Adam, constant lr unless cosine)
         self.fitted = True
-        last_year = w >= 2.0 ** (-252 / self.half_life)          # samples within 252 trading days of the training end
-        self.logger.info("protocol: %d samples, recency weight min %.4f, sampling share of the last 252 days %.3f",
-                         len(w), w.min(), w[last_year].sum() / w.sum())
+        self.logger.info("protocol switches: cosine=%s adamw_weight_decay=%s half_life=%s train_eval=%s",
+                         self.cosine, self.adamw_weight_decay, self.half_life, self.train_eval)
         evals_result["valid"] = []
         for e in range(self.n_epochs):
             for g in self.train_optimizer.param_groups:
                 g["lr"] = self.lr_at(e)
             self.train_epoch(train_loader)
+            if self.train_eval:                                  # Qlib's fit evaluates the (shuffled) training loader too
+                self.test_epoch(train_loader)
             val_loss, val_score = self.test_epoch(valid_loader)
             evals_result["valid"].append(val_score)
             self.logger.info("protocol epoch %d/%d lr %.6f valid %.6f (log only)", e + 1, self.n_epochs, self.lr_at(e), val_score)

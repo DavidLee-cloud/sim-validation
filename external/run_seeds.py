@@ -35,6 +35,14 @@ CONFIGS = {"lgb": BENCH / "LightGBM" / "workflow_config_lightgbm_Alpha158.yaml",
 # not depend on n_epochs, so the 10-epoch run also writes the 5-epoch result (as <base>_fb5).
 VARIANTS = {"lstm_fb": ("lstm", "FixedBudgetLSTM", 20, ()), "alstm_fb": ("alstm", "FixedBudgetALSTM", 20, ()),
             "lstm_fb10": ("lstm", "FixedBudgetLSTM", 10, (5,)), "alstm_fb10": ("alstm", "FixedBudgetALSTM", 10, (5,))}
+# T20: the T18-A base (bare fixed 10 epochs) plus ONE component of the protocol, via fixed_budget.Protocol*'s switches
+# (train_eval=True keeps Qlib's per-epoch pass over the training loader, as in the base). d0 = every switch off: a
+# check that must reproduce lstm_fb10. name -> (base, class, n_epochs, extra deploys, protocol kwargs)
+_OFF = dict(cosine=False, adamw_weight_decay=None, half_life=None, train_eval=True)
+DECOMP = {"d0": {}, "d1": dict(cosine=True), "d2": dict(adamw_weight_decay=0.03), "d3": dict(half_life=504.0)}
+for _d, _kw in DECOMP.items():
+    for _m, _cls in (("lstm", "ProtocolLSTM"), ("alstm", "ProtocolALSTM")):
+        VARIANTS[f"{_m}_{_d}"] = (_m, _cls, 10, (), {**_OFF, **_kw})
 FB_EARLY_STOP = 1000
 for _v, (_base, *_rest) in VARIANTS.items():
     CONFIGS[_v] = CONFIGS[_base]
@@ -119,10 +127,10 @@ def main() -> None:
     task = cfg["task"]
     deploys = [(a.model, None)]                        # (output name, epoch to deploy; None = as trained)
     if a.model in VARIANTS:
-        base, cls, n_epochs, extra = VARIANTS[a.model]
+        base, cls, n_epochs, extra, *kw = VARIANTS[a.model]
         task["model"]["class"] = cls
         task["model"]["module_path"] = "fixed_budget"     # external/fixed_budget.py (this script's directory is on sys.path)
-        task["model"]["kwargs"].update(n_epochs=n_epochs, early_stop=FB_EARLY_STOP)
+        task["model"]["kwargs"].update(n_epochs=n_epochs, early_stop=FB_EARLY_STOP, **(kw[0] if kw else {}))
         deploys += [(f"{base}_fb{e}", e) for e in extra]
     t0 = time.time()
     dataset = init_instance_by_config(task["dataset"])
