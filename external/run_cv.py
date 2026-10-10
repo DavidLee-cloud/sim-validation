@@ -108,13 +108,13 @@ def build_dataset(task: dict, train: tuple, valid: tuple, fit_end: str):
     return init_instance_by_config(ds_cfg)
 
 
-def chosen_epoch(model: str, tag: str) -> dict:
+def chosen_epoch(model: str, tag: str, kind: str = "cvfold", key: str = "valid_curve") -> dict:
     curves = []
     for k in range(N_FOLDS):
-        f = run_dir(model, "cvfold") / f"seed_{tag}_f{k}.json"
+        f = run_dir(model, kind) / f"seed_{tag}_f{k}.json"
         if not f.exists():
-            raise SystemExit(f"fold {k} of {model} seed {tag} not done yet")
-        curves.append(json.loads(f.read_text(encoding="utf-8"))["valid_curve"])
+            raise SystemExit(f"fold {k} of {model} seed {tag} ({kind}) not done yet")
+        curves.append(json.loads(f.read_text(encoding="utf-8"))[key])
     c = np.array(curves)
     mean = c.mean(axis=0)
     return {"e_star": int(np.argmax(mean)) + 1, "mean_curve": mean.tolist(), "fold_curves": c.tolist(),
@@ -150,25 +150,111 @@ def run_fold(task, model_cfg, model, tag, k):
           f"(dropped {proxy.n_dropped}) best={out['best_epoch']} sec={time.time() - t0:.0f}", flush=True)
 
 
+def predict_segment(m, dataset, segment: str) -> pd.Series:
+    """Qlib's LSTM/ALSTM predict(), but on any segment (Qlib's is fixed to "test")."""
+    import torch
+    from qlib.data.dataset.handler import DataHandlerLP
+    from torch.utils.data import DataLoader
+    dl = dataset.prepare(segment, col_set=["feature", "label"], data_key=DataHandlerLP.DK_I)
+    dl.config(fillna_type="ffill+bfill")
+    net = getattr(m, m._net_attr)
+    net.eval()
+    preds = []
+    for data in DataLoader(dl, batch_size=m.batch_size, num_workers=m.n_jobs):
+        with torch.no_grad():
+            preds.append(net(data[:, :, 0:-1].to(m.device).float()).detach().cpu().numpy())
+    return pd.Series(np.concatenate(preds), index=dl.get_index())
+
+
+def run_crit_fold(task, model_cfg, model, tag, k):
+    """T21: as run_fold (same split, embargo, 20 epochs, Qlib's fit), plus a parameter snapshot per epoch
+    (fixed_budget.FixedBudget*); after fit each epoch is loaded and scored on the validation fold by -MSE (Qlib's
+    own, from fit's per-epoch evaluation), the mean daily IC and the mean daily Rank IC (qlib.contrib.eva.alpha.calc_ic
+    against the raw label, as SigAnaRecord does on the test period)."""
+    from qlib.contrib.eva.alpha import calc_ic
+    from qlib.data import D
+    from qlib.data.dataset import DatasetH
+    from qlib.data.dataset.handler import DataHandlerLP
+    from qlib.utils import init_instance_by_config
+    from qlib.utils.mod import class_casting
+    cal = [pd.Timestamp(x) for x in D.calendar(start_time=CV_START, end_time=CV_END)]
+    vs, ve, lo, hi = fold_bounds(cal, k)
+    t0 = time.time()
+    dataset = build_dataset(task, (CV_START, CV_END), (str(vs.date()), str(ve.date())), CV_END)
+    cfg = copy.deepcopy(model_cfg)
+    cfg["class"], cfg["module_path"] = FB_CLASS[model], "fixed_budget"
+    cfg["kwargs"].update(n_epochs=E_MAX, early_stop=E_MAX + 1000)
+    m = init_instance_by_config(cfg)
+    proxy = _PurgedTrain(dataset, lo, hi)
+    evals = {}
+    m.fit(proxy, evals_result=evals)
+    t_fit = time.time() - t0
+    with class_casting(dataset, DatasetH):
+        label = dataset.prepare("valid", col_set="label", data_key=DataHandlerLP.DK_R).iloc[:, 0]
+    ic_curve, ric_curve = [], []
+    for e in range(1, E_MAX + 1):
+        m.deploy_epoch(e)
+        pred = predict_segment(m, dataset, "valid")
+        ic, ric = calc_ic(pred, label.reindex(pred.index))
+        ic_curve.append(float(ic.mean()))
+        ric_curve.append(float(ric.mean()))
+    mse_curve = [float(v) for v in evals["valid"]]
+    out = {"model": model, "seed": int(tag), "fold": k, "valid_start": str(vs.date()), "valid_end": str(ve.date()),
+           "excluded_from_train": [str(lo.date()), str(hi.date())], "n_train": proxy.n_train,
+           "mse_curve": mse_curve, "ic_curve": ic_curve, "ric_curve": ric_curve,
+           "best_mse": int(np.argmax(mse_curve)) + 1, "best_ic": int(np.argmax(ic_curve)) + 1,
+           "best_ric": int(np.argmax(ric_curve)) + 1, "fit_sec": round(t_fit, 1), "total_sec": round(time.time() - t0, 1)}
+    t19 = run_dir(model, "cvfold") / f"seed_{tag}_f{k}.json"
+    if t19.exists():
+        old = json.loads(t19.read_text(encoding="utf-8"))["valid_curve"]
+        out["max_abs_diff_vs_t19_mse"] = float(np.max(np.abs(np.array(old) - np.array(mse_curve))))
+    d = run_dir(model, "cvcrit")
+    d.mkdir(parents=True, exist_ok=True)
+    tmp = d / f"seed_{tag}_f{k}.json.tmp"
+    tmp.write_text(json.dumps(out, indent=1), encoding="utf-8")
+    tmp.replace(d / f"seed_{tag}_f{k}.json")
+    print(f"[{model} seed {tag} crit fold {k}] best mse/ic/ric={out['best_mse']}/{out['best_ic']}/{out['best_ric']} "
+          f"diff_vs_t19={out.get('max_abs_diff_vs_t19_mse')} sec={time.time() - t0:.0f}", flush=True)
+
+
+DEPLOY = {  # job -> (output kind, (fold kind, curve key) for e*, training segment)
+    "full": ("cv", ("cvfold", "valid_curve"), "full"), "ctrl": ("cvctrl", ("cvfold", "valid_curve"), "ctrl"),
+    "fullric": ("cvric", ("cvcrit", "ric_curve"), "full"), "fullic": ("cvic", ("cvcrit", "ic_curve"), "full")}
+
+
 def run_deploy(task, model_cfg, model, tag, job):
     from qlib.utils import fill_placeholder, init_instance_by_config
     from qlib.workflow import R
-    sel = chosen_epoch(model, tag)
+    kind, crit, seg = DEPLOY[job]
+    sel = chosen_epoch(model, tag, *crit)
     e = sel["e_star"]
-    if job == "full":
-        name = f"{model}_cv{SUFFIX}"
+    name = f"{model}_{kind}{SUFFIX}"
+    if seg == "full":
         train, valid, fit_end = (CV_START, CV_END), ("2016-12-01", CV_END), CV_END   # valid: last month, logged only
     else:
-        name = f"{model}_cvctrl{SUFFIX}"
         train, valid, fit_end = (CV_START, OFFICIAL_TRAIN_END), ("2015-01-01", CV_END), OFFICIAL_TRAIN_END
+    out_dir = RUNS / name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    t19 = run_dir(model, "cv") / f"seed_{tag}.json"
+    if job == "fullic":                               # e*_I equal to e*_R: the Rank IC run is the same training
+        ric = run_dir(model, "cvric") / f"seed_{tag}.json"
+        if ric.exists() and json.loads(ric.read_text(encoding="utf-8"))["e_star"] == e:
+            t19 = ric
+    if job in ("fullric", "fullic") and t19.exists() and json.loads(t19.read_text(encoding="utf-8"))["e_star"] == e:
+        res = json.loads(t19.read_text(encoding="utf-8"))   # same e* as T19's MSE rule: the same training, reuse it
+        res.update(model=name, job=job, reused_from=str(t19), deployed_epoch=e, **sel)
+        (out_dir / f"seed_{tag}_pred.pkl").write_bytes((t19.parent / f"seed_{tag}_pred.pkl").read_bytes())
+        tmp = out_dir / f"seed_{tag}.json.tmp"
+        tmp.write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
+        tmp.replace(out_dir / f"seed_{tag}.json")
+        print(f"[{name} seed {tag}] e*={e} equals T19's e*: reused {t19}", flush=True)
+        return
     t0 = time.time()
     dataset = build_dataset(task, train, valid, fit_end)
     cfg = copy.deepcopy(model_cfg)
     cfg["class"], cfg["module_path"] = FB_CLASS[model], "fixed_budget"
     cfg["kwargs"].update(n_epochs=e, early_stop=e + 1000)
     m = init_instance_by_config(cfg)
-    out_dir = RUNS / name
-    out_dir.mkdir(parents=True, exist_ok=True)
     ensure_experiment(R, f"{name}_seeds")
     fitted = False
     for attempt in range(3):      # MLflow's file store can read back a just-logged metric file as empty ("malformed")
@@ -204,14 +290,17 @@ def output_path(model: str, seed: int, job: str) -> Path:
     tag = f"{seed:02d}"
     if job.startswith("fold"):
         return run_dir(model, "cvfold") / f"seed_{tag}_f{int(job[4:])}.json"
-    return run_dir(model, "cv" if job == "full" else "cvctrl") / f"seed_{tag}.json"
+    if job.startswith("cfold"):
+        return run_dir(model, "cvcrit") / f"seed_{tag}_f{int(job[5:])}.json"
+    return run_dir(model, DEPLOY[job][0]) / f"seed_{tag}.json"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", choices=["lstm", "alstm"], required=True)
     ap.add_argument("--seed", type=int, required=True)
-    ap.add_argument("--job", choices=[f"fold{k}" for k in range(N_FOLDS)] + ["full", "ctrl"], required=True)
+    ap.add_argument("--job", choices=[f"fold{k}" for k in range(N_FOLDS)] + [f"cfold{k}" for k in range(N_FOLDS)]
+                    + list(DEPLOY), required=True)
     a = ap.parse_args()
     if output_path(a.model, a.seed, a.job).exists():
         print("done already")
@@ -231,6 +320,8 @@ def main() -> None:
     tag = f"{a.seed:02d}"
     if a.job.startswith("fold"):
         run_fold(task, model_cfg, a.model, tag, int(a.job[4:]))
+    elif a.job.startswith("cfold"):
+        run_crit_fold(task, model_cfg, a.model, tag, int(a.job[5:]))
     else:
         run_deploy(task, model_cfg, a.model, tag, a.job)
 
