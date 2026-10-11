@@ -39,7 +39,8 @@ NAMES = {"lgb": "LightGBM", "mlp": "MLP", "gru": "GRU", "lstm": "LSTM", "alstm":
          "lstm_proto10": "LSTM 完整协议 10 轮", "alstm_proto10": "ALSTM 完整协议 10 轮",
          "lstm_esyr": "LSTM 早停＋按年重训", "alstm_esyr": "ALSTM 早停＋按年重训",
          **{f"{m}_{d}": f"{M} {n}" for m, M in (("lstm", "LSTM"), ("alstm", "ALSTM"))
-            for d, n in (("d1", "D1 余弦退火"), ("d2", "D2 权重衰减"), ("d3", "D3 近期加权"), ("d4", "D4 按年重训"))}}
+            for d, n in (("d1", "D1 余弦退火"), ("d2", "D2 权重衰减"), ("d3", "D3 近期加权"), ("d4", "D4 按年重训"),
+                         ("c5", "余弦退火 5 轮"), ("c20", "余弦退火 20 轮"))}}
 # T17 variants (run_seeds.py VARIANTS): the official config except these two settings and the deployed epoch
 NOTES = {m: "与官方配置只差两处：n_epochs 20、early_stop 1000（不触发早停），并部署第 20 轮的参数而非验证最优轮"
             "（`external/fixed_budget.py`）。官方 README 无此设定，故无对照值。" for m in ("lstm_fb", "alstm_fb")}

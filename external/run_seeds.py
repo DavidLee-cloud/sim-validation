@@ -43,6 +43,11 @@ DECOMP = {"d0": {}, "d1": dict(cosine=True), "d2": dict(adamw_weight_decay=0.03)
 for _d, _kw in DECOMP.items():
     for _m, _cls in (("lstm", "ProtocolLSTM"), ("alstm", "ProtocolALSTM")):
         VARIANTS[f"{_m}_{_d}"] = (_m, _cls, 10, (), {**_OFF, **_kw})
+# T22: D1 (base + cosine) with E = 5 / 20 epochs, each trained from scratch with its own schedule; c10 = a check that
+# must reproduce <m>_d1
+for _e in (5, 10, 20):
+    for _m, _cls in (("lstm", "ProtocolLSTM"), ("alstm", "ProtocolALSTM")):
+        VARIANTS[f"{_m}_c{_e}"] = (_m, _cls, _e, (), {**_OFF, "cosine": True})
 FB_EARLY_STOP = 1000
 for _v, (_base, *_rest) in VARIANTS.items():
     CONFIGS[_v] = CONFIGS[_base]
