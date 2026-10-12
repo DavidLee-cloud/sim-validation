@@ -12,7 +12,7 @@
 
 | 编号 | 状态 | 任务 | 云端回报 |
 |---|---|---|---|
-| P1 | 待办 | **环境重建与冒烟**。`bash setup_p7_ext.sh`；然后 `~/ext/.venv-qlib/bin/python external/p7_screen.py --smoke`（基础配置、种子 0）。回报：各包版本、数据最后一个交易日、数据集构建用时、单次训练用时、该次的 IC 与含成本年化超额（与 T14 的 LightGBM 冒烟 IC 0.0468、年化超额 0.081 对照，线程数不同可有小差异）。 | |
+| P1 | 完成 | **环境重建与冒烟**。`bash setup_p7_ext.sh`；然后 `~/ext/.venv-qlib/bin/python external/p7_screen.py --smoke`（基础配置、种子 0）。回报：各包版本、数据最后一个交易日、数据集构建用时、单次训练用时、该次的 IC 与含成本年化超额（与 T14 的 LightGBM 冒烟 IC 0.0468、年化超额 0.081 对照，线程数不同可有小差异）。 || 2026-10-12 完成。setup 约 5 分钟（无报错）；版本 Python 3.10.20、pyqlib 0.9.7、lightgbm 4.7.0、mlflow 3.16.1、numpy 2.2.6、pandas 2.3.3、torch 2.6.0+cpu；数据最后一个交易日 2020-09-25。冒烟（base，种子 0，num_threads=4）：数据集构建 141 秒，单次训练＋记录 128.5 秒；IC 0.0463、ICIR 0.380、Rank IC 0.0491，年化超额含成本 0.1308（不含成本 0.1769），信息比 1.556，最大回撤 −0.0705。与 `results/external/seeds_lgb_mlp.csv` 的 LightGBM 种子 0 逐位一致（IC 0.046346、含成本 0.130786）。与 T14 冒烟（IC 0.0468、0.081）相比 IC 接近而年化超额高约 0.05：T14 用的是官方配置不设种子，此处设 seed=0；LightGBM 的 20 种子含成本年化超额本就为 0.107±0.016，组合层对种子敏感，非环境问题。 |
 | P2 | 待办（P1 完成后） | **第 0、1 轮**。`--round 0`；`--round 1`（6 个候选，可用 `--only` 分给 3 个进程，例如 `--only r1_lr010,r1_lr030`、`--only r1_leaves064,r1_depth6`、`--only r1_col060,r1_l2low`）；全部完成后 `--adopt 1`。回报：采纳了哪个配置、7 个配置在种子 0—2 上的均值（`--adopt` 的输出）、用时。提交 `results/external/p7_screen_adopted.json`。 | |
 | P3 | 待办（P2 完成后） | **第 2 轮**。`--round 2`（同样分 3 个进程）；完成后 `--adopt 2`。回报同上。若脚本提示某候选与已采纳配置相同而跳过，照实回报。 | |
 | P4 | 待办（P3 完成后） | **第 3 轮与分析**。`--round 3`；完成后 `--adopt 3`（只为记录）；再运行 `~/ext/.venv-qlib/bin/python external/p7_screen_analyze.py`，提交 `results/external/p7_screen.md`、`p7_screen_seeds.csv`、`p7_screen_screens.csv`、`p7_screen_adopted.json`。回报：分析输出的 P1—P5 几段原文。 | |
