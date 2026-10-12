@@ -99,12 +99,14 @@ def adopt(r: int) -> None:
           ", ".join(f"{k} {v:.4f}" for k, v in sorted(scores.items(), key=lambda kv: -kv[1])))
 
 
-def run(todo: dict, seeds: list) -> None:
+def run(todo: dict, seeds: list, max_runs: int = 0) -> None:
     os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     jobs = [(n, ov, s) for n, ov in todo.items() for s in seeds if not (RUNS / f"p7s_{n}" / f"seed_{s:02d}.json").exists()]
     if not jobs:
         print("all runs done")
         return
+    if max_runs:
+        jobs = jobs[:max_runs]   # memory grows by ~0.8 GB per run within one process; restart to free it
     RUNS.mkdir(parents=True, exist_ok=True)
     os.chdir(RUNS)
     import qlib
@@ -149,6 +151,7 @@ def main() -> None:
     g.add_argument("--adopt", type=int, choices=[1, 2, 3])
     g.add_argument("--smoke", action="store_true")
     ap.add_argument("--only", default="", help="comma-separated configuration names of the round")
+    ap.add_argument("--max-runs", type=int, default=0, help="stop after this many runs (0 = all); rerun to continue")
     a = ap.parse_args()
     if a.adopt:
         adopt(a.adopt)
@@ -159,7 +162,7 @@ def main() -> None:
         if a.only:
             keep = set(a.only.split(","))
             todo = {k: v for k, v in todo.items() if k in keep}
-        run(todo, SEEDS)
+        run(todo, SEEDS, a.max_runs)
 
 
 if __name__ == "__main__":
