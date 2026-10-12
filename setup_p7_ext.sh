@@ -3,7 +3,7 @@
 # Versions as in T14 (results/external/T14_smoke.md): Python 3.10, pyqlib 0.9.7, lightgbm 4.7.0, mlflow 3.16.1,
 # numpy 2.2.6, pandas 2.3.3, torch 2.6.0+cpu (newer torch breaks Qlib's MLP through a string version check).
 set -e
-mkdir -p ~/ext ~/ext/runs
+mkdir -p ~/ext ~/ext/runs ~/ext/logs
 [ -d ~/ext/qlib ] || git clone --depth 1 https://github.com/microsoft/qlib ~/ext/qlib
 command -v uv >/dev/null || pip install uv
 uv python install 3.10
