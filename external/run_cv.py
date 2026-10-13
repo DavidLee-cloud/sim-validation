@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np
 import pandas as pd
 
-from run_seeds import CONFIGS, RUNS, ensure_experiment, metrics, seeded_model_config  # noqa: E402
+from run_seeds import _OFF, CONFIGS, RUNS, ensure_experiment, metrics, seeded_model_config  # noqa: E402
 
 N_FOLDS, E_MAX, EMBARGO = 5, 20, 20
 CV_START, CV_END = "2008-01-01", "2016-12-31"
@@ -219,7 +219,13 @@ def run_crit_fold(task, model_cfg, model, tag, k):
 
 DEPLOY = {  # job -> (output kind, (fold kind, curve key) for e*, training segment)
     "full": ("cv", ("cvfold", "valid_curve"), "full"), "ctrl": ("cvctrl", ("cvfold", "valid_curve"), "ctrl"),
-    "fullric": ("cvric", ("cvcrit", "ric_curve"), "full"), "fullic": ("cvic", ("cvcrit", "ic_curve"), "full")}
+    "fullric": ("cvric", ("cvcrit", "ric_curve"), "full"), "fullic": ("cvic", ("cvcrit", "ic_curve"), "full"),
+    # T23: retrain on 2008-2016 with the Protocol classes (only the cosine switch on); E = e*_R (G1) or 5 (G2);
+    # cvrchk = the check (cosine off, E = e*_R), which must reproduce the fullric training exactly
+    "cvrcos": ("cvrcos", ("cvcrit", "ric_curve"), "full"), "f5cos": ("f5cos", ("cvcrit", "ric_curve"), "full"),
+    "cvrchk": ("cvrchk", ("cvcrit", "ric_curve"), "full")}
+T23 = {"cvrcos": (None, True), "f5cos": (5, True), "cvrchk": (None, False)}   # job -> (fixed E or None = e*_R, cosine)
+PROTO_CLASS = {"lstm": "ProtocolLSTM", "alstm": "ProtocolALSTM"}
 
 
 def run_deploy(task, model_cfg, model, tag, job):
@@ -228,6 +234,8 @@ def run_deploy(task, model_cfg, model, tag, job):
     kind, crit, seg = DEPLOY[job]
     sel = chosen_epoch(model, tag, *crit)
     e = sel["e_star"]
+    if job in T23 and T23[job][0]:
+        e = T23[job][0]
     name = f"{model}_{kind}{SUFFIX}"
     if seg == "full":
         train, valid, fit_end = (CV_START, CV_END), ("2016-12-01", CV_END), CV_END   # valid: last month, logged only
@@ -254,6 +262,9 @@ def run_deploy(task, model_cfg, model, tag, job):
     cfg = copy.deepcopy(model_cfg)
     cfg["class"], cfg["module_path"] = FB_CLASS[model], "fixed_budget"
     cfg["kwargs"].update(n_epochs=e, early_stop=e + 1000)
+    if job in T23:                                    # E = 1: no annealing possible, constant lr (noted in the report)
+        cfg["class"] = PROTO_CLASS[model]
+        cfg["kwargs"].update({**_OFF, "cosine": T23[job][1] and e > 1})
     m = init_instance_by_config(cfg)
     ensure_experiment(R, f"{name}_seeds")
     fitted = False
