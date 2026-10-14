@@ -17,7 +17,7 @@
 | P3 | 完成 | **第 2 轮**。`--round 2`（同样分 3 个进程）；完成后 `--adopt 2`。回报同上。若脚本提示某候选与已采纳配置相同而跳过，照实回报。 || 2026-10-13 完成。脚本未提示跳过（6 个候选的 overrides 都与 base 不同）。`--adopt 2` 输出：`round 2: adopted r2_sub060 (mean over seeds [0, 1, 2] = 0.1174); all: r2_sub060 0.1174, r2_leaves400 0.1174, base 0.1174, r2_lr005 0.1099, r2_col040 0.1043, r2_minleaf500 0.1017, r2_l1low 0.0877`。**须注意：采纳是一次三方平局，由浮点舍入决定。** r2_sub060、r2_leaves400 与 base 在全部 15 个种子上的 IC、含成本与不含成本年化超额逐位相同（差 <1e-12）；三者的种子 0—2 均值仅在第 16 位不同（0.11738949484591982 / …1970 / …1969），`max` 取了累加舍入后最大的 r2_sub060。原因（推断）：官方配置未设 `bagging_freq`，LightGBM 此时忽略 `subsample`（bagging_fraction），故 subsample=0.6 不起作用；num_leaves 400 与 210 在 max_depth=8 及强正则下长出的树相同。影响：被采纳的配置在功能上等同于 base，故第 3 轮候选等价于“base＋一项改动”，结果不受平局如何打破的影响；但论文里“第 2 轮采纳了 sub060”应表述为“第 2 轮无有效改进，两项候选为无效改动”。按规则未改脚本或采纳规则，是否需要在分析中把这两项候选视为与对照相同的筛查（d≡0）请本机判断。参考（15 种子含成本年化超额均值）：lr005 0.1113、base/sub060/leaves400 0.1100、col040 0.1067、minleaf500 0.0988、l1low 0.0923。用时：UTC 21:10—01:56，约 4.8 小时，其中实际计算约 2.6 小时（单次中位数约 98 秒）；其余是容器被回收后的等待：23:50 前后、00:05 后、01:11 前后各中断一次，均在下次检查时续跑，无数据损失，无 OOM。 |
 | P4 | 完成 | **第 3 轮与分析**。`--round 3`；完成后 `--adopt 3`（只为记录）；再运行 `~/ext/.venv-qlib/bin/python external/p7_screen_analyze.py`，提交 `results/external/p7_screen.md`、`p7_screen_seeds.csv`、`p7_screen_screens.csv`、`p7_screen_adopted.json`。回报：分析输出的 P1—P5 几段原文。 || 2026-10-13 完成。`--adopt 3` 输出：`round 3: adopted r2_sub060 (mean over seeds [0, 1, 2] = 0.1174); all: r2_sub060 0.1174, r3_leaves128 0.1174, r3_lr015 0.1158, r3_depth10 0.1109, r3_l2high 0.1049, r3_l1high 0.1038, r3_col080 0.1033`（r2_sub060 与 r3_leaves128 再次逐位相同、并列；按 `max` 取先出现的对照）。**与 base 逐位相同的第 3 轮候选：r3_leaves128**（15 个种子的 IC、含/不含成本年化超额差均 <1e-12）；其余 5 个均不同。推断原因：num_leaves 取 128、210、400 结果全同，说明在 max_depth=8 与强 L1/L2 正则（λ1≈206、λ2≈581）下每棵树实际叶子数从未超过 128，num_leaves 上限不起作用；subsample 因未设 `bagging_freq` 被忽略（同 P3）。因此全部 18 次筛查中有 3 次是对照与候选完全相同的“零筛查”（第 2 轮 r2_sub060、r2_leaves400，第 3 轮 r3_leaves128，d_A＝d_B＝e＝0），分析脚本按原样把它们计入 P2—P4，未作改动，如何处理由本机决定。`p7_screen_analyze.py` 未改，正常退出；提交了 `p7_screen.md`、`p7_screen_seeds.csv`、`p7_screen_screens.csv`、`p7_screen_adopted.json`。分析输出 P1—P5 原文见下方“P4 回报附录”。要点：P1 采纳配置差距 +0.96pp，未采纳 17 个均值 +0.10（s.d. 0.88），命题 1 参照 1.22；P2 12 次筛查 d_A−d_B 均值 −0.53（t＝−3.15）；P3 年化超额斜率 0.18（−0.38 至 0.61）、事前 κ₃＝0.00（τ²＝0），IC 斜率 0.55（0.24 至 0.72）、κ₃＝0.60；P4 e 对 d_A 斜率高于对 d_B（年化 0.36 vs 0.13，IC 0.70 vs 0.49），方向与预期相反；P5 IC 的斜率与 κ₃ 均高于年化超额。用时：第 3 轮 UTC 01:56—05:05，约 3.1 小时（单次中位数约 101 秒），全程在会话回合内前台等待，无中断、无 OOM。另：前几次中断的原因已查明为会话空闲时容器被回收（后台进程不算活动），非程序问题。 |
 | P5 | 完成 | **导出逐年指标**（不跑模型，几分钟）。先 `git merge origin/main` 取新脚本。运行 `~/ext/.venv-qlib/bin/python external/p7_screen_years.py`，提交 `results/external/p7_screen_years.csv`。回报：行数（应为 285 次运行 × 4 年 ＝ 1140 行）、有无缺失的运行。若 `~/ext/runs/p7s_*` 已不在（容器被重置），不要重跑，照实回报。补充登记见 `external/PREREG_P7_screen_addendum_zh.md`（A 部分）。 || 2026-10-13 完成。`~/ext/runs/p7s_*` 仍在（容器回收不影响磁盘）。输出：`p7s_: 285 runs, 1140 rows -> p7_screen_years.csv`；`p7m_: no runs found, skipped`。核对：1140 行＝19 个配置 × 15 个种子 × 4 年，每个（配置, 种子）恰 4 行，无缺失运行、无空值或 NaN；各年交易日数 2017 244、2018 243、2019 244、2020 140，与 `seeds_lgb_mlp.md` 一致。 |
-| P6 | 待办（P5 后） | **第二个模型：MLP 上的同一筛查实验**（登记见 `external/PREREG_P7_screen_addendum_zh.md` B 部分；脚本 `external/p7_screen_mlp.py`、`external/p7_screen_mlp_analyze.py`，用法与 LightGBM 版相同，只换脚本名）。① `--smoke`：回报用时、IC 与含成本年化超额，并与 `results/external/seeds_lgb_mlp.csv` 中 MLP 种子 0（IC 0.0353 左右、年化超额 0.0766）对照，线程数不同可有小差异；若脚本因参数名不被接受而退出，照实回报、不要改候选。② `--round 0`、`--round 1`、`--adopt 1`、`--round 2`、`--adopt 2`、`--round 3`、`--adopt 3`，最后 `external/p7_screen_mlp_analyze.py`；内存允许时最多 2 个进程（用 `--only` 分配），沿用 `--max-runs 6` 外层循环续跑；MLP 单次约 1—10 分钟。③ 全部完成后再运行一次 `external/p7_screen_years.py`（这次会同时写出 `p7_screen_mlp_years.csv`）。④ 提交 `results/external/` 下的 `p7_screen_mlp.md`、`p7_screen_mlp_seeds.csv`、`p7_screen_mlp_screens.csv`、`p7_screen_mlp_adopted.json`、`p7_screen_mlp_years.csv`。回报：各轮采纳结果与 `--adopt` 原文、与对照逐位相同的候选（若有）、分析输出 P1—P5 原文、用时与异常。会话空闲时容器会被回收，请在回合内前台等待或定期查看。 | |
+| P6 | 完成 | **第二个模型：MLP 上的同一筛查实验**（登记见 `external/PREREG_P7_screen_addendum_zh.md` B 部分；脚本 `external/p7_screen_mlp.py`、`external/p7_screen_mlp_analyze.py`，用法与 LightGBM 版相同，只换脚本名）。① `--smoke`：回报用时、IC 与含成本年化超额，并与 `results/external/seeds_lgb_mlp.csv` 中 MLP 种子 0（IC 0.0353 左右、年化超额 0.0766）对照，线程数不同可有小差异；若脚本因参数名不被接受而退出，照实回报、不要改候选。② `--round 0`、`--round 1`、`--adopt 1`、`--round 2`、`--adopt 2`、`--round 3`、`--adopt 3`，最后 `external/p7_screen_mlp_analyze.py`；内存允许时最多 2 个进程（用 `--only` 分配），沿用 `--max-runs 6` 外层循环续跑；MLP 单次约 1—10 分钟。③ 全部完成后再运行一次 `external/p7_screen_years.py`（这次会同时写出 `p7_screen_mlp_years.csv`）。④ 提交 `results/external/` 下的 `p7_screen_mlp.md`、`p7_screen_mlp_seeds.csv`、`p7_screen_mlp_screens.csv`、`p7_screen_mlp_adopted.json`、`p7_screen_mlp_years.csv`。回报：各轮采纳结果与 `--adopt` 原文、与对照逐位相同的候选（若有）、分析输出 P1—P5 原文、用时与异常。会话空闲时容器会被回收，请在回合内前台等待或定期查看。 || 2026-10-14 完成。① 冒烟：参数名检查通过；数据集构建 290 秒，单次训练＋记录 154.9 秒；IC 0.038405、含成本年化超额 0.076626，与 `seeds_lgb_mlp.csv` 的 MLP 种子 0 逐位一致（任务单写的 IC 0.0353 是 T14 不设种子时的值）。单进程峰值内存约 10.8 GB，两个进程会超出 15 GB，故全程**单进程**、`--max-runs 6`。② 采纳（`--adopt` 原文）：`round 1: adopted m1_wd0 (mean over seeds [0, 1, 2] = 0.0900); all: m1_wd0 0.0900, m1_es25 0.0890, base 0.0890, m1_lr001 0.0818, m1_bs4096 0.0777, m1_wd001 0.0770, m1_lr004 0.0621`；`round 2: adopted m2_es100 (mean over seeds [0, 1, 2] = 0.0900); all: m2_es100 0.0900, m2_steps2000 0.0900, m1_wd0 0.0900, m2_bs16384 0.0877, m2_wd0005 0.0868, m2_lr003 0.0843, m2_ev10 0.0818`；`round 3: adopted m3_ev40 (mean over seeds [0, 1, 2] = 0.0926); all: m3_ev40 0.0926, m2_es100 0.0900, m3_es75 0.0900, m3_wd0001 0.0887, m3_lr0015 0.0856, m3_lr0025 0.0752, m3_bs6144 0.0744`。**第 2 轮的采纳又是一次平局，由浮点舍入决定**：m2_es100、m2_steps2000、m1_wd0 在种子 0—2 上逐位相同（均值 0.09001108195617814 / …807 / …803），`max` 取了舍入后最大的 m2_es100。与 LightGBM 不同，它并非在所有种子上都等同于对照，故采纳它确实改变了第 3 轮的对照（仅在种子 4、8、12 上不同）。③ 与对照在全部 15 个种子上逐位相同的候选：**无**。部分种子相同（差 <1e-12）的：m1_es25 对 base 14/15（仅种子 3 不同）；m2_es100 对 m1_wd0 12/15（4、8、12 不同）；m2_steps2000 对 m1_wd0 12/15（10、12、14 不同）；m3_es75 对 m2_es100 14/15（4 不同）。推断：这些都是早停/最大步数类改动，只有当训练恰好走到相应步数或耐心窗口时才生效，大多数种子在官方设置下更早停止，故结果不变。登记的“零筛查剔除”口径只针对全部种子相同的情形，此处没有；这 4 个近零筛查是否另作处理请本机决定。④ `p7_screen_mlp_analyze.py` 未改、正常退出；`p7_screen_years.py` 输出 `p7s_: 285 runs, 1140 rows`、`p7m_: 285 runs, 1140 rows -> p7_screen_mlp_years.csv`（`p7_screen_years.csv` 内容未变）。分析 P1—P5 原文见下方“P6 回报附录”。要点：P1 采纳配置差距 +1.05/+0.99/+1.24pp，未采纳 16 个均值 +0.72（s.d. 0.76），参照 1.38；P2 d_A−d_B 均值 −0.22（t＝−0.76，第 2 轮 +0.35、第 3 轮 −0.79）；P3 年化超额斜率 0.08（−0.22 至 0.27）、κ₃＝0.00，IC 斜率 0.79（0.62 至 0.98）、κ₃＝0.59；P4 年化 0.22 vs −0.08，IC 0.73 vs 0.82；P5 IC 高于年化超额。⑤ 用时：UTC 10-13 12:00 至 10-14 06:00，约 18 小时（单次中位数约 150 秒，每 6 次另加约 290 秒建数据集；第 2、3 轮部分候选更慢）。异常：会话工作进程两次重启（约 10-14 02:55、05:10），容器随之重启，分别损失约 25 分钟和 6 分钟，续跑后无数据损失；无 OOM。 |
 
 ## P4 回报附录：`p7_screen_analyze.py` 输出 P1—P5 原文（云端 2026-10-13）
 
@@ -64,3 +64,49 @@ Never adopted (17 configurations): mean gap +0.10, s.d. 0.88. Adopted: base +0.9
 |---|---|---|---|
 | ann | 12 | 0.36 | 0.13 |
 | ic | 12 | 0.70 | 0.49 |
+
+## P6 回报附录：`p7_screen_mlp_analyze.py` 输出 P1—P5 原文（云端 2026-10-14）
+
+## P1 Overstatement on seeds 0-2 (annualized excess after costs, pp)
+
+| configuration | adopted after round | mean seeds 0-2 | mean seeds 3-11 | gap |
+|---|---|---|---|---|
+| base | — | 8.90 | 7.77 | +1.14 |
+| m1_bs4096 | — | 7.77 | 7.09 | +0.69 |
+| m1_es25 | — | 8.90 | 7.64 | +1.27 |
+| m1_lr001 | — | 8.18 | 7.33 | +0.85 |
+| m1_lr004 | — | 6.21 | 6.97 | -0.75 |
+| m1_wd0 | 1 | 9.00 | 7.95 | +1.05 |
+| m1_wd001 | — | 7.70 | 7.75 | -0.05 |
+| m2_bs16384 | — | 8.77 | 7.81 | +0.96 |
+| m2_es100 | 2 | 9.00 | 8.01 | +0.99 |
+| m2_ev10 | — | 8.18 | 6.09 | +2.09 |
+| m2_lr003 | — | 8.43 | 7.52 | +0.91 |
+| m2_steps2000 | — | 9.00 | 7.87 | +1.13 |
+| m2_wd0005 | — | 8.68 | 7.47 | +1.22 |
+| m3_bs6144 | — | 7.44 | 8.01 | -0.57 |
+| m3_es75 | — | 9.00 | 7.75 | +1.25 |
+| m3_ev40 | 3 | 9.26 | 8.02 | +1.24 |
+| m3_lr0015 | — | 8.56 | 8.14 | +0.42 |
+| m3_lr0025 | — | 7.52 | 7.69 | -0.17 |
+| m3_wd0001 | — | 8.87 | 7.70 | +1.17 |
+
+Never adopted (16 configurations): mean gap +0.72, s.d. 0.76. Adopted: m1_wd0 +1.05, m2_es100 +0.99, m3_ev40 +1.24. Proposition 1 benchmark (independent noise, m = 7): sigma_cfg / sqrt(3) * mu_7 = 1.77 / 1.732 * 1.3522 = 1.38.
+
+## P2 Rounds 2-3: development estimate on the adoption seeds minus on fresh seeds (pp)
+
+12 screens: mean -0.22, s.d. 1.01, t = -0.76. By round: round 2: +0.35 (baseline gap +1.05); round 3: -0.79 (baseline gap +0.99)
+
+## P3, P5 Retention on clean development seeds, against the ex-ante prediction
+
+| metric | screens | observed slope (95% bootstrap) | ex-ante kappa_3 | sigma^2 (dev seeds) | tau^2 (dev seeds) |
+|---|---|---|---|---|---|
+| annualized excess (pp) | 18 | 0.08 (-0.22 to 0.27) | 0.00 | 2.891 | 0 |
+| IC | 18 | 0.79 (0.62 to 0.98) | 0.59 | 3.684e-06 | 1.797e-06 |
+
+## P4 Rounds 2-3: retention slope on the adoption seeds against fresh seeds
+
+| metric | screens | slope of e on d_A | slope of e on d_B |
+|---|---|---|---|
+| ann | 12 | 0.22 | -0.08 |
+| ic | 12 | 0.73 | 0.82 |
