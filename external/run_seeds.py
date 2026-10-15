@@ -48,6 +48,14 @@ for _d, _kw in DECOMP.items():
 for _e in (5, 10, 20):
     for _m, _cls in (("lstm", "ProtocolLSTM"), ("alstm", "ProtocolALSTM")):
         VARIANTS[f"{_m}_c{_e}"] = (_m, _cls, _e, (), {**_OFF, "cosine": True})
+# T24: US market (Qlib us_data, sp500, benchmark ^gspc, no price limit, 0.0005 each side, no minimum fee); the
+# official LSTM / ALSTM configs with only the market and backtest lines changed (external/us_configs/). ES = us_<m>;
+# us_<m>_fb10 also writes the 5-epoch result (us_<m>_fb5); us_<m>_c5 = T22's C5.
+US_CONFIGS = Path(__file__).resolve().parent / "us_configs"
+for _m, _fb, _pr in (("lstm", "FixedBudgetLSTM", "ProtocolLSTM"), ("alstm", "FixedBudgetALSTM", "ProtocolALSTM")):
+    CONFIGS[f"us_{_m}"] = US_CONFIGS / f"workflow_config_{_m}_Alpha158_us.yaml"
+    VARIANTS[f"us_{_m}_fb10"] = (f"us_{_m}", _fb, 10, (5,))
+    VARIANTS[f"us_{_m}_c5"] = (f"us_{_m}", _pr, 5, (), {**_OFF, "cosine": True})
 FB_EARLY_STOP = 1000
 for _v, (_base, *_rest) in VARIANTS.items():
     CONFIGS[_v] = CONFIGS[_base]
